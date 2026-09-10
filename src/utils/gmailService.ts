@@ -1,4 +1,6 @@
 import { EmailMessage, EmailThreadSummary } from '../types';
+import { encryptData, decryptData } from './encryption';
+import { getOrCreateDevicePinSecret } from './storage';
 
 declare global {
   interface Window {
@@ -22,6 +24,7 @@ declare global {
 
 const GMAIL_TOKEN_KEY = 'cardsnap_gmail_token';
 const GMAIL_USER_KEY = 'cardsnap_gmail_user';
+const GMAIL_ENC_PREFIX = 'enc:v1:';
 
 export interface StoredGmailAuth {
   accessToken: string;
@@ -29,43 +32,130 @@ export interface StoredGmailAuth {
   email?: string;
 }
 
+// In-memory decrypted cache for zero-latency synchronous access without cleartext disk persistence
+let decryptedGmailAuthCache: StoredGmailAuth | null = null;
+
+// Immediately kick off background decryption on module load
+if (typeof window !== 'undefined') {
+  loadSavedGmailAuthAsync().catch((err) => {
+    console.warn('Initial background Gmail token decryption error:', err);
+  });
+}
+
 /**
- * Gets cached token if valid.
+ * Asynchronously decrypts and retrieves stored OAuth credentials.
  */
-export function getSavedGmailAuth(): StoredGmailAuth | null {
+export async function loadSavedGmailAuthAsync(): Promise<StoredGmailAuth | null> {
   try {
     const raw = localStorage.getItem(GMAIL_TOKEN_KEY);
-    if (!raw) return null;
-    const parsed: StoredGmailAuth = JSON.parse(raw);
-    if (Date.now() > parsed.expiresAt - 60000) {
-      // Expired or near expiration
+    if (!raw) {
+      decryptedGmailAuthCache = null;
       return null;
     }
+
+    let payloadString = raw;
+    if (raw.startsWith(GMAIL_ENC_PREFIX)) {
+      const ciphertext = raw.slice(GMAIL_ENC_PREFIX.length);
+      const secret = getOrCreateDevicePinSecret();
+      payloadString = await decryptData(ciphertext, secret);
+    } else {
+      // Legacy unencrypted token migration: upgrade immediately to encrypted storage
+      try {
+        const parsedLegacy = JSON.parse(raw);
+        if (parsedLegacy.accessToken) {
+          await saveGmailAuth(
+            parsedLegacy.accessToken,
+            Math.max(60, Math.floor((parsedLegacy.expiresAt - Date.now()) / 1000)),
+            parsedLegacy.email
+          );
+        }
+      } catch {
+        // Ignore JSON parsing failure for corrupted migration
+      }
+    }
+
+    const parsed: StoredGmailAuth = JSON.parse(payloadString);
+    if (Date.now() > parsed.expiresAt - 60000) {
+      // Token is expired or within 1 minute of expiring
+      decryptedGmailAuthCache = null;
+      return null;
+    }
+
+    decryptedGmailAuthCache = parsed;
     return parsed;
   } catch (e) {
+    console.warn('Failed to decrypt stored Gmail auth:', e);
+    decryptedGmailAuthCache = null;
     return null;
   }
 }
 
 /**
- * Saves Gmail token to local storage.
+ * Gets cached token if valid (synchronous lookup backed by decrypted in-memory state).
  */
-export function saveGmailAuth(token: string, expiresInSeconds: number = 3600, email?: string) {
+export function getSavedGmailAuth(): StoredGmailAuth | null {
+  if (decryptedGmailAuthCache) {
+    if (Date.now() > decryptedGmailAuthCache.expiresAt - 60000) {
+      decryptedGmailAuthCache = null;
+      return null;
+    }
+    return decryptedGmailAuthCache;
+  }
+
+  try {
+    const raw = localStorage.getItem(GMAIL_TOKEN_KEY);
+    if (!raw) return null;
+
+    // If it's already an encrypted token, background loader will populate decryptedGmailAuthCache
+    if (raw.startsWith(GMAIL_ENC_PREFIX)) {
+      loadSavedGmailAuthAsync().catch(() => {});
+      return null;
+    }
+
+    // Legacy unencrypted token support
+    const parsed: StoredGmailAuth = JSON.parse(raw);
+    if (Date.now() > parsed.expiresAt - 60000) {
+      return null;
+    }
+    decryptedGmailAuthCache = parsed;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Saves Gmail token to storage using AES-GCM 256-bit encryption with a device/session-bound key (SEC-04).
+ */
+export async function saveGmailAuth(token: string, expiresInSeconds: number = 3600, email?: string): Promise<void> {
   const payload: StoredGmailAuth = {
     accessToken: token,
     expiresAt: Date.now() + expiresInSeconds * 1000,
     email: email || localStorage.getItem(GMAIL_USER_KEY) || undefined,
   };
-  localStorage.setItem(GMAIL_TOKEN_KEY, JSON.stringify(payload));
-  if (email) {
-    localStorage.setItem(GMAIL_USER_KEY, email);
+
+  // 1. Immediately update volatile in-memory cache for synchronous consumer access
+  decryptedGmailAuthCache = payload;
+
+  // 2. Encrypt token before persisting to disk / localStorage to prevent cleartext token extraction
+  try {
+    const secret = getOrCreateDevicePinSecret();
+    const payloadString = JSON.stringify(payload);
+    const encrypted = await encryptData(payloadString, secret);
+    localStorage.setItem(GMAIL_TOKEN_KEY, `${GMAIL_ENC_PREFIX}${encrypted}`);
+    if (email) {
+      localStorage.setItem(GMAIL_USER_KEY, email);
+    }
+  } catch (err) {
+    console.error('Failed to encrypt Gmail OAuth token before persistence:', err);
   }
 }
 
 /**
- * Clears stored Gmail Auth
+ * Clears stored Gmail Auth from memory and localStorage.
  */
 export function clearGmailAuth() {
+  decryptedGmailAuthCache = null;
   localStorage.removeItem(GMAIL_TOKEN_KEY);
   localStorage.removeItem(GMAIL_USER_KEY);
 }

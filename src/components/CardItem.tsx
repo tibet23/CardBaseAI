@@ -115,17 +115,26 @@ export const CardItem: React.FC<CardItemProps> = ({
         </div>
 
         <div className="flex items-center space-x-1 sm:space-x-1.5 shrink-0">
+          {card.phone && (
+            <a
+              href={`tel:${card.phone}`}
+              onClick={(e) => e.stopPropagation()}
+              className="min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Call Contact"
+            >
+              <Phone className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            </a>
+          )}
+
           {card.email && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onClick(card);
-              }}
-              className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              title="View Email & Conversation History"
+            <a
+              href={`mailto:${card.email}`}
+              onClick={(e) => e.stopPropagation()}
+              className="min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Send Email"
             >
               <Mail className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            </button>
+            </a>
           )}
 
           <button
@@ -133,7 +142,7 @@ export const CardItem: React.FC<CardItemProps> = ({
               e.stopPropagation();
               onOpenQr(card);
             }}
-            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title="Show vCard QR Code"
           >
             <QrCode className="h-4 w-4 text-purple-600 dark:text-purple-400" />
@@ -144,7 +153,8 @@ export const CardItem: React.FC<CardItemProps> = ({
               e.stopPropagation();
               onToggleFavorite(card);
             }}
-            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="min-h-[42px] min-w-[42px] flex items-center justify-center rounded-xl text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            title="Toggle Favorite"
           >
             <Star className={`h-4 w-4 ${card.isFavorite ? 'text-amber-500 fill-current' : ''}`} />
           </button>
@@ -174,13 +184,17 @@ export const CardItem: React.FC<CardItemProps> = ({
 
         {/* Top Floating Controls */}
         <div className="absolute top-2.5 inset-x-2.5 flex items-center justify-between pointer-events-auto z-20">
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={() => onToggleSelect(card.id)}
+          <div
             onClick={(e) => e.stopPropagation()}
-            className="h-5 w-5 rounded-md border-white/40 bg-black/40 text-blue-500 focus:ring-blue-500 shadow-sm cursor-pointer"
-          />
+            className="min-h-[40px] min-w-[40px] flex items-center justify-center -m-1.5"
+          >
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={() => onToggleSelect(card.id)}
+              className="h-5 w-5 rounded-md border-white/50 bg-black/50 text-blue-500 focus:ring-blue-500 shadow-sm cursor-pointer"
+            />
+          </div>
 
           <div className="flex items-center space-x-1.5">
             {hasCrmSync && (
@@ -197,10 +211,11 @@ export const CardItem: React.FC<CardItemProps> = ({
                 e.stopPropagation();
                 onToggleFavorite(card);
               }}
-              className="min-h-[32px] min-w-[32px] flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white transition-colors cursor-pointer"
+              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white transition-colors cursor-pointer"
+              title="Toggle Favorite"
             >
               <Star
-                className={`h-3.5 w-3.5 ${
+                className={`h-4 w-4 ${
                   card.isFavorite ? 'text-amber-400 fill-current' : 'text-white/80'
                 }`}
               />
@@ -238,25 +253,33 @@ export const CardItem: React.FC<CardItemProps> = ({
           </p>
         </div>
 
-        {/* Contact Snippets */}
-        <div className="space-y-1 text-xs text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
+        {/* Contact Snippets with direct tap triggers */}
+        <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
           {card.email && (
-            <div className="flex items-center text-[11px] truncate">
+            <a
+              href={`mailto:${card.email}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center text-[11px] truncate hover:text-blue-600 dark:hover:text-blue-400 transition-colors py-0.5"
+            >
               <Mail className="h-3 w-3 mr-1.5 text-slate-400 shrink-0" />
               <span className="truncate">{maskInfo(card.email)}</span>
-            </div>
+            </a>
           )}
           {card.phone && (
-            <div className="flex items-center text-[11px] truncate">
+            <a
+              href={`tel:${card.phone}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center text-[11px] truncate hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors py-0.5"
+            >
               <Phone className="h-3 w-3 mr-1.5 text-slate-400 shrink-0" />
               <span>{maskInfo(card.phone)}</span>
-            </div>
+            </a>
           )}
         </div>
 
         {/* Footer Tags & QR Action */}
         <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80">
-          <div className="flex flex-wrap gap-1 max-w-[75%] overflow-hidden h-5">
+          <div className="flex flex-wrap gap-1 max-w-[70%] overflow-hidden h-5">
             {card.tags?.slice(0, 2).map((t) => (
               <span
                 key={t}
@@ -272,7 +295,7 @@ export const CardItem: React.FC<CardItemProps> = ({
               e.stopPropagation();
               onOpenQr(card);
             }}
-            className="min-h-[32px] min-w-[32px] flex items-center justify-center rounded-xl text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title="Show vCard QR Code"
           >
             <QrCode className="h-4 w-4 text-purple-600 dark:text-purple-400" />

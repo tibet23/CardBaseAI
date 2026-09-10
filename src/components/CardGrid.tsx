@@ -338,44 +338,44 @@ export const CardGrid: React.FC<CardGridProps> = ({
 
       </div>
 
-      {/* Bulk Action Sticky Bar (Appears when items are selected) */}
+      {/* Bulk Action Dock (Fixed floating thumb dock on mobile, sticky bar on desktop) */}
       {selectedIds.length > 0 && (
-        <div className="sticky top-20 z-20 bg-slate-900/95 dark:bg-[#090d16]/95 backdrop-blur-md text-white p-3 sm:p-4 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in slide-in-from-top duration-200 border border-slate-700 dark:border-slate-800">
-          <div className="flex items-center space-x-3 text-xs font-bold w-full sm:w-auto justify-between sm:justify-start">
-            <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white">
+        <div className="fixed sm:sticky bottom-4 sm:bottom-auto sm:top-20 inset-x-3 sm:inset-x-auto z-40 bg-slate-950/95 dark:bg-[#070b14]/95 backdrop-blur-xl text-white p-3 sm:p-4 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 animate-in slide-in-from-bottom sm:slide-in-from-top duration-200 border border-slate-700/80 dark:border-slate-800">
+          <div className="flex items-center space-x-3 text-xs font-bold justify-between sm:justify-start">
+            <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-extrabold">
               {selectedIds.length} Selected
             </span>
             <button
               onClick={handleSelectAll}
-              className="text-slate-300 hover:text-white underline cursor-pointer"
+              className="text-slate-300 hover:text-white underline cursor-pointer text-xs"
             >
               {selectedIds.length === filteredCards.length ? 'Deselect All' : 'Select All Filtered'}
             </button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 text-xs w-full sm:w-auto">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs">
             <button
               onClick={() => exportToVCF(selectedCards)}
-              className="min-h-[38px] px-3 py-1.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 flex items-center transition-colors cursor-pointer"
+              className="min-h-[42px] px-3 py-2 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 flex items-center justify-center transition-colors cursor-pointer"
             >
-              <Download className="h-3.5 w-3.5 mr-1.5 text-blue-400" />
-              Export .VCF ({selectedIds.length})
+              <Download className="h-4 w-4 mr-1.5 text-blue-400 shrink-0" />
+              <span>.VCF ({selectedIds.length})</span>
             </button>
 
             <button
               onClick={() => exportToCSV(selectedCards)}
-              className="min-h-[38px] px-3 py-1.5 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 flex items-center transition-colors cursor-pointer"
+              className="min-h-[42px] px-3 py-2 rounded-xl font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 flex items-center justify-center transition-colors cursor-pointer"
             >
-              <Download className="h-3.5 w-3.5 mr-1.5 text-emerald-400" />
-              Export .CSV
+              <Download className="h-4 w-4 mr-1.5 text-emerald-400 shrink-0" />
+              <span>.CSV</span>
             </button>
 
             <button
               onClick={() => onBulkCrmSync(selectedIds, 'HubSpot')}
-              className="min-h-[38px] px-3 py-1.5 rounded-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center shadow-sm transition-colors cursor-pointer"
+              className="min-h-[42px] px-3 py-2 rounded-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-sm transition-colors cursor-pointer"
             >
-              <Share2 className="h-3.5 w-3.5 mr-1.5" />
-              Push to CRM
+              <Share2 className="h-4 w-4 mr-1.5 shrink-0" />
+              <span>Push CRM</span>
             </button>
 
             <button
@@ -385,10 +385,10 @@ export const CardGrid: React.FC<CardGridProps> = ({
                   setSelectedIds([]);
                 }
               }}
-              className="min-h-[38px] px-3 py-1.5 rounded-xl font-bold bg-red-600/80 hover:bg-red-600 text-white flex items-center transition-colors cursor-pointer"
+              className="min-h-[42px] px-3 py-2 rounded-xl font-bold bg-red-600/90 hover:bg-red-600 text-white flex items-center justify-center transition-colors cursor-pointer"
             >
-              <Trash2 className="h-3.5 w-3.5 mr-1" />
-              Delete
+              <Trash2 className="h-4 w-4 mr-1 shrink-0" />
+              <span>Delete</span>
             </button>
           </div>
         </div>

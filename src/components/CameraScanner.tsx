@@ -14,7 +14,8 @@ import {
   FileText,
   RefreshCw,
   ExternalLink,
-  ShieldAlert
+  ShieldAlert,
+  Zap
 } from 'lucide-react';
 import { ContactCard } from '../types';
 import { performOfflineOCR } from '../utils/offlineOcr';
@@ -46,11 +47,28 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [highContrast, setHighContrast] = useState(false);
   const [cameraUnavailable, setCameraUnavailable] = useState(false);
+  const [hasTorch, setHasTorch] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nativeCameraInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  const toggleTorch = async () => {
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      const nextState = !isTorchOn;
+      await (track as any).applyConstraints({
+        advanced: [{ torch: nextState }],
+      });
+      setIsTorchOn(nextState);
+    } catch (err) {
+      console.warn('Torch constraint toggle not supported:', err);
+    }
+  };
 
   // Ephemeral memory drop when modal closes
   useEffect(() => {
@@ -98,6 +116,12 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
+      // Inspect track capabilities for flashlight/torch support on mobile cameras
+      const track = mediaStream.getVideoTracks()[0];
+      if (track && typeof (track as any).getCapabilities === 'function') {
+        const caps = (track as any).getCapabilities();
+        setHasTorch(Boolean(caps?.torch));
+      }
     } catch (err: any) {
       console.warn('Live camera streaming unavailable:', err?.message || err);
       setCameraUnavailable(true);
@@ -108,6 +132,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   };
 
   const stopCamera = () => {
+    setIsTorchOn(false);
     if (stream) {
       stream.getTracks().forEach((track) => track.stop());
       setStream(null);
@@ -172,6 +197,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     }
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+
+    // Tactile haptic feedback for phone shutter tap
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      try { navigator.vibrate([20, 30]); } catch {}
+    }
 
     if (currentSide === 'front') {
       // Overwrite previous scan memory
@@ -387,9 +417,12 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#090d16] rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800/90 w-full max-w-4xl max-h-[96vh] sm:max-h-[92vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-[#090d16] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800/90 w-full max-w-4xl max-h-[96vh] sm:max-h-[92vh] flex flex-col overflow-hidden">
         
+        {/* Mobile Top Swipe Handle */}
+        <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-2 sm:hidden shrink-0" />
+
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/80 dark:bg-[#0b1120]/80">
           <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 pr-2">
@@ -537,64 +570,149 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 )}
               </div>
 
-              {/* Bottom Shutter & Secondary Inputs */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="min-h-[44px] text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center cursor-pointer px-2"
-                  >
-                    <Upload className="h-4 w-4 mr-1.5 shrink-0" />
-                    Upload image file
-                  </button>
-
-                  <button
-                    onClick={handleLoadSampleCard}
-                    className="min-h-[44px] text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 flex items-center cursor-pointer px-2"
-                  >
-                    <Sparkles className="h-4 w-4 mr-1.5 shrink-0" />
-                    Load demo card
-                  </button>
-
-                  {/* Native Device Camera input with capture="environment" */}
-                  <input
-                    ref={nativeCameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-
-                  {/* Standard file upload input */}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                </div>
-
-                <div className="w-full sm:w-auto">
-                  {!cameraUnavailable ? (
+              {/* Bottom Shutter & Controls Dock */}
+              <div className="pt-2 space-y-3">
+                {/* Mobile Ergonomic Shutter Bar */}
+                <div className="flex sm:hidden items-center justify-around py-2 px-4 bg-slate-100/80 dark:bg-[#070b14] rounded-2xl border border-slate-200/80 dark:border-slate-800">
+                  {/* Left: Torch/Flashlight or Upload */}
+                  {hasTorch ? (
                     <button
-                      onClick={handleCapture}
-                      className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                      onClick={toggleTorch}
+                      className={`min-h-[46px] min-w-[46px] rounded-2xl flex flex-col items-center justify-center transition-all cursor-pointer ${
+                        isTorchOn
+                          ? 'bg-amber-400 text-slate-900 shadow-md shadow-amber-400/30 scale-105'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                      }`}
+                      title={isTorchOn ? 'Turn Flash Off' : 'Turn Flash On'}
                     >
-                      <Camera className="h-5 w-5 mr-2 shrink-0" />
-                      Scan Front of Card
+                      <Zap className="h-5 w-5" />
+                      <span className="text-[9px] font-bold mt-0.5">Flash</span>
                     </button>
                   ) : (
                     <button
-                      onClick={() => nativeCameraInputRef.current?.click()}
-                      className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="min-h-[46px] min-w-[46px] rounded-2xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex flex-col items-center justify-center transition-colors cursor-pointer"
+                      title="Upload Image"
                     >
-                      <Camera className="h-5 w-5 mr-2 shrink-0" />
-                      Open Device Camera
+                      <Upload className="h-5 w-5" />
+                      <span className="text-[9px] font-bold mt-0.5">Upload</span>
                     </button>
                   )}
+
+                  {/* Center: Large Thumb Shutter Button */}
+                  <button
+                    onClick={!cameraUnavailable ? handleCapture : () => nativeCameraInputRef.current?.click()}
+                    className="w-18 h-18 rounded-full border-4 border-slate-300 dark:border-slate-600 flex items-center justify-center bg-slate-200/60 dark:bg-slate-800/60 active:scale-90 transition-transform cursor-pointer p-1 shadow-xl"
+                    aria-label="Snap photo"
+                  >
+                    <div className="w-full h-full rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                      <Camera className="h-7 w-7 stroke-[2.2]" />
+                    </div>
+                  </button>
+
+                  {/* Right: Camera Flip */}
+                  <button
+                    onClick={() =>
+                      setFacingMode(facingMode === 'environment' ? 'user' : 'environment')
+                    }
+                    className="min-h-[46px] min-w-[46px] rounded-2xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex flex-col items-center justify-center transition-colors cursor-pointer"
+                    title="Flip camera"
+                  >
+                    <FlipHorizontal className="h-5 w-5" />
+                    <span className="text-[9px] font-bold mt-0.5">Flip</span>
+                  </button>
                 </div>
+
+                {/* Desktop & Tablet Control Bar */}
+                <div className="hidden sm:flex flex-row items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {hasTorch && (
+                      <button
+                        onClick={toggleTorch}
+                        className={`min-h-[44px] px-3 rounded-xl text-xs font-bold flex items-center cursor-pointer transition-colors ${
+                          isTorchOn
+                            ? 'bg-amber-400 text-slate-900'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        <Zap className="h-4 w-4 mr-1.5 shrink-0" />
+                        {isTorchOn ? 'Torch On' : 'Torch Off'}
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="min-h-[44px] text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center cursor-pointer px-2"
+                    >
+                      <Upload className="h-4 w-4 mr-1.5 shrink-0" />
+                      Upload image file
+                    </button>
+
+                    <button
+                      onClick={handleLoadSampleCard}
+                      className="min-h-[44px] text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 flex items-center cursor-pointer px-2"
+                    >
+                      <Sparkles className="h-4 w-4 mr-1.5 shrink-0" />
+                      Load demo card
+                    </button>
+                  </div>
+
+                  <div>
+                    {!cameraUnavailable ? (
+                      <button
+                        onClick={handleCapture}
+                        className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                      >
+                        <Camera className="h-5 w-5 mr-2 shrink-0" />
+                        Scan Front of Card
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => nativeCameraInputRef.current?.click()}
+                        className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                      >
+                        <Camera className="h-5 w-5 mr-2 shrink-0" />
+                        Open Device Camera
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Secondary Quick Links on Mobile */}
+                <div className="flex sm:hidden items-center justify-center space-x-4 text-xs font-semibold text-slate-500 dark:text-slate-400 pt-1">
+                  <button
+                    onClick={handleLoadSampleCard}
+                    className="flex items-center space-x-1 hover:text-amber-500 cursor-pointer min-h-[36px]"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                    <span>Demo Card</span>
+                  </button>
+                  <span>•</span>
+                  <button
+                    onClick={() => nativeCameraInputRef.current?.click()}
+                    className="flex items-center space-x-1 hover:text-blue-500 cursor-pointer min-h-[36px]"
+                  >
+                    <Camera className="h-3.5 w-3.5 text-blue-500" />
+                    <span>Native Camera</span>
+                  </button>
+                </div>
+
+                {/* Hidden Native File Inputs */}
+                <input
+                  ref={nativeCameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
               </div>
             </div>
           ) : (

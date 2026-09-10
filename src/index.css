@@ -1,1 +1,35 @@
 @import "tailwindcss";
+
+/* Mobile Optimizations (Safe Areas, Tap Highlighting & Momentum Scrolling) */
+:root {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  overscroll-behavior-y: contain;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* Hide scrollbar for horizontal category filter pills on mobile */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Safe area padding utilities for iPhone notch / home indicator */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
+}
+.pb-safe-nav {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0.5rem));
+}
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
+}

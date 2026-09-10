@@ -444,9 +444,12 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
   const selectedCount = detectedCards.filter((c) => c.selected).length;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-[#090d16] rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800/90 w-full max-w-6xl max-h-[96vh] sm:max-h-[92vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/85 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-[#090d16] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800/90 w-full max-w-6xl max-h-[96vh] sm:max-h-[92vh] flex flex-col overflow-hidden">
         
+        {/* Mobile Top Swipe Handle */}
+        <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mt-2 sm:hidden shrink-0" />
+
         {/* Modal Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/80 dark:bg-[#0b1120]/80">
           <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 pr-2">

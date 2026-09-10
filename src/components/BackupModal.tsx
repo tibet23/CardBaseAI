@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { ContactCard } from '../types';
 import { encryptData, decryptData, computeChecksum } from '../utils/encryption';
-import { AppSettings } from '../utils/storage';
+import { AppSettings, generateCryptographicVaultKey } from '../utils/storage';
 
 interface BackupModalProps {
   isOpen: boolean;
@@ -43,6 +43,11 @@ export const BackupModal: React.FC<BackupModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [restoreJsonInput, setRestoreJsonInput] = useState('');
   const [activeTab, setActiveTab] = useState<'cloud' | 'local_file' | 'privacy'>('cloud');
+  const [vaultKeyInput, setVaultKeyInput] = useState<string>(() => {
+    return settings.cloudSyncKey && settings.cloudSyncKey !== 'cardsnap_vault_master'
+      ? settings.cloudSyncKey
+      : generateCryptographicVaultKey();
+  });
 
   if (!isOpen) return null;
 
@@ -50,6 +55,16 @@ export const BackupModal: React.FC<BackupModalProps> = ({
     if (!password) {
       setErrorMessage('Please enter an encryption password.');
       return;
+    }
+
+    // SEC-01 Remediation: Enforce cryptographic UUIDv4 vault key, never fallback to shared static string
+    const effectiveVaultKey = (vaultKeyInput.trim() && vaultKeyInput.trim() !== 'cardsnap_vault_master')
+      ? vaultKeyInput.trim()
+      : generateCryptographicVaultKey();
+
+    if (effectiveVaultKey !== settings.cloudSyncKey) {
+      onUpdateSettings({ ...settings, cloudSyncKey: effectiveVaultKey });
+      setVaultKeyInput(effectiveVaultKey);
     }
 
     setIsProcessing(true);
@@ -61,13 +76,17 @@ export const BackupModal: React.FC<BackupModalProps> = ({
       const encrypted = await encryptData(payloadString, password);
       const checksum = await computeChecksum(payloadString);
 
-      setStatusMessage('Uploading encrypted payload to secure cloud backup vault...');
+      // Compute SHA-256 verification hash bound to the backupKey and passphrase (SEC-01 remediation)
+      const verificationHash = await computeChecksum(`v1_auth:${effectiveVaultKey}:${password}`);
+
+      setStatusMessage('Uploading encrypted payload with cryptographic authorization hash...');
 
       const response = await fetch('/api/backup/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          backupKey: settings.cloudSyncKey || 'cardsnap_vault_master',
+          backupKey: effectiveVaultKey,
+          verificationHash,
           encryptedPayload: encrypted,
           metadata: {
             cardCount: cards.length,
@@ -83,10 +102,11 @@ export const BackupModal: React.FC<BackupModalProps> = ({
 
       onUpdateSettings({
         ...settings,
+        cloudSyncKey: effectiveVaultKey,
         lastCloudBackup: data.timestamp,
       });
 
-      setStatusMessage(`Encrypted cloud backup completed successfully! (${data.sizeBytes} bytes secured)`);
+      setStatusMessage(`Encrypted cloud backup completed successfully! (${data.sizeBytes} bytes secured in vault ${effectiveVaultKey.slice(0, 14)}...)`);
     } catch (err: any) {
       console.error('Backup error:', err);
       setErrorMessage(err.message || 'Could not complete cloud backup.');
@@ -101,16 +121,26 @@ export const BackupModal: React.FC<BackupModalProps> = ({
       return;
     }
 
+    const effectiveVaultKey = vaultKeyInput.trim() || settings.cloudSyncKey;
+    if (!effectiveVaultKey || effectiveVaultKey === 'cardsnap_vault_master') {
+      setErrorMessage('Please enter a valid unique Vault ID to restore from.');
+      return;
+    }
+
     setIsProcessing(true);
     setErrorMessage(null);
     setStatusMessage('Retrieving encrypted vault from cloud backup server...');
 
     try {
+      // Compute verification hash bound to the backupKey and passphrase
+      const verificationHash = await computeChecksum(`v1_auth:${effectiveVaultKey}:${password}`);
+
       const response = await fetch('/api/backup/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          backupKey: settings.cloudSyncKey || 'cardsnap_vault_master',
+          backupKey: effectiveVaultKey,
+          verificationHash,
         }),
       });
 
@@ -134,7 +164,7 @@ export const BackupModal: React.FC<BackupModalProps> = ({
       setStatusMessage(`Restored ${parsedCards.length} business cards successfully!`);
     } catch (err: any) {
       console.error('Restore error:', err);
-      setErrorMessage(err.message || 'Decryption failed. Check your password.');
+      setErrorMessage(err.message || 'Decryption failed. Check your password and Vault ID.');
     } finally {
       setIsProcessing(false);
     }
@@ -322,6 +352,37 @@ export const BackupModal: React.FC<BackupModalProps> = ({
                   <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-200 dark:bg-sky-900 text-sky-800 dark:text-sky-200">
                     {cards.length} Cards in Vault
                   </span>
+                </div>
+
+                {/* Cryptographic Vault Identifier Field (SEC-01 remediation) */}
+                <div className="pt-2 pb-1 space-y-1">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center">
+                      <Key className="h-3 w-3 mr-1 text-sky-500" />
+                      Cryptographic Vault ID (UUIDv4)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newKey = generateCryptographicVaultKey();
+                        setVaultKeyInput(newKey);
+                        onUpdateSettings({ ...settings, cloudSyncKey: newKey });
+                      }}
+                      className="text-[10px] text-sky-600 dark:text-sky-400 hover:underline cursor-pointer"
+                    >
+                      Generate New ID
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={vaultKeyInput}
+                    onChange={(e) => setVaultKeyInput(e.target.value)}
+                    placeholder="vault_xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono text-[11px]"
+                  />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                    Unique isolated tenant slot. Keep this ID and your passphrase to sync across multiple devices.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 pt-2">

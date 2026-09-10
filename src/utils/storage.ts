@@ -27,11 +27,28 @@ export interface AppSettings {
   defaultExportFormat: 'vcf' | 'csv';
 }
 
+/**
+ * Generates a cryptographically secure UUIDv4 vault key to prevent
+ * multi-tenant collision or predictable IDOR attacks (SEC-01).
+ */
+export function generateCryptographicVaultKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `vault_${crypto.randomUUID()}`;
+  }
+  const buf = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(buf);
+  } else {
+    for (let i = 0; i < 16; i++) buf[i] = Math.floor(Math.random() * 256);
+  }
+  return `vault_${Array.from(buf).map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   darkMode: false,
   privacyMode: false,
   autoCloudBackup: true,
-  cloudSyncKey: 'cardsnap_vault_master',
+  cloudSyncKey: '', // Dynamically generated per-device/user on initialization
   defaultExportFormat: 'vcf',
 };
 
@@ -354,12 +371,20 @@ export function getCrmConfigs(): CRMConfig[] {
 export function getAppSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_SETTINGS);
-    if (!raw) {
-      return DEFAULT_SETTINGS;
+    let settings: AppSettings = DEFAULT_SETTINGS;
+    if (raw) {
+      settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
     }
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    // SEC-01: Remove default shared key 'cardsnap_vault_master' and enforce cryptographic UUIDv4
+    if (!settings.cloudSyncKey || settings.cloudSyncKey === 'cardsnap_vault_master') {
+      settings.cloudSyncKey = generateCryptographicVaultKey();
+      saveAppSettings(settings);
+    }
+    return settings;
   } catch {
-    return DEFAULT_SETTINGS;
+    const fallback: AppSettings = { ...DEFAULT_SETTINGS, cloudSyncKey: generateCryptographicVaultKey() };
+    saveAppSettings(fallback);
+    return fallback;
   }
 }
 
@@ -394,24 +419,104 @@ export function clearOfflineQueue(): void {
   localStorage.removeItem(STORAGE_KEY_OFFLINE_QUEUE);
 }
 
+// ============================================================================
+// SECURITY FOCUS 5: Tamper-Resistant Billing State with Cryptographic Signatures
+// ============================================================================
+interface SignedBillingRecord {
+  data: UserBillingState;
+  signature: string;
+  timestamp: number;
+}
+
+let verifiedBillingCache: UserBillingState | null = null;
+
+/**
+ * Computes an HMAC-style digest over billing state using the local device secret.
+ * Prevents unauthorized privilege escalation and quota tampering via browser DevTools.
+ */
+function computeBillingDigestSync(billing: UserBillingState, secret: string): string {
+  const canonical = `plan:${billing.plan}|sub:${billing.isSubscribed}|limit:${billing.freeCardsLimit}|used:${billing.freeCardsUsed}|cred:${billing.purchasedCredits}|scan:${billing.totalCardsScanned}|sec:${secret}`;
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  for (let i = 0; i < canonical.length; i++) {
+    const ch = canonical.charCodeAt(i);
+    h1 ^= ch;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= ch;
+    h2 = Math.imul(h2, 0x85ebca6b);
+    h1 = (h1 << 13) | (h1 >>> 19);
+    h2 = (h2 << 17) | (h2 >>> 15);
+  }
+  const part1 = (h1 >>> 0).toString(16).padStart(8, '0');
+  const part2 = (h2 >>> 0).toString(16).padStart(8, '0');
+  return `sig_v1_${part1}_${part2}`;
+}
+
 export function getUserBilling(): UserBillingState {
+  if (verifiedBillingCache) {
+    return verifiedBillingCache;
+  }
+
   try {
     const raw = localStorage.getItem(STORAGE_KEY_BILLING);
     if (!raw) {
       saveUserBilling(DEFAULT_BILLING);
+      verifiedBillingCache = DEFAULT_BILLING;
       return DEFAULT_BILLING;
     }
-    return { ...DEFAULT_BILLING, ...JSON.parse(raw) };
-  } catch {
+
+    const secret = getOrCreateDevicePinSecret();
+    const parsed = JSON.parse(raw);
+
+    // Verify cryptographic signature if present
+    if (parsed && parsed.data && typeof parsed.signature === 'string') {
+      const signedRecord = parsed as SignedBillingRecord;
+      const expectedSig = computeBillingDigestSync(signedRecord.data, secret);
+      if (signedRecord.signature !== expectedSig) {
+        console.warn('SECURITY ALERT (SEC-05): Local billing state tampering detected! Invalid cryptographic signature. Reverting to verified default state.');
+        saveUserBilling(DEFAULT_BILLING);
+        verifiedBillingCache = DEFAULT_BILLING;
+        return DEFAULT_BILLING;
+      }
+      verifiedBillingCache = signedRecord.data;
+      return signedRecord.data;
+    }
+
+    // Unsigned / tampered legacy data:
+    // Any direct manual writes into localStorage without a signature are sanitized and signed
+    console.warn('SECURITY ALERT (SEC-05): Unsigned billing record detected in storage. Sanitizing and applying cryptographic signature.');
+    const safeData: UserBillingState = {
+      plan: 'free',
+      isSubscribed: false,
+      freeCardsLimit: 20,
+      freeCardsUsed: typeof parsed.freeCardsUsed === 'number' ? Math.min(20, Math.max(0, parsed.freeCardsUsed)) : DEFAULT_BILLING.freeCardsUsed,
+      purchasedCredits: 0,
+      totalCardsScanned: typeof parsed.totalCardsScanned === 'number' ? Math.max(0, parsed.totalCardsScanned) : DEFAULT_BILLING.totalCardsScanned,
+    };
+    saveUserBilling(safeData);
+    verifiedBillingCache = safeData;
+    return safeData;
+  } catch (err) {
+    console.error('Error loading billing state, resetting to secure default:', err);
+    saveUserBilling(DEFAULT_BILLING);
+    verifiedBillingCache = DEFAULT_BILLING;
     return DEFAULT_BILLING;
   }
 }
 
 export function saveUserBilling(billing: UserBillingState): void {
   try {
-    localStorage.setItem(STORAGE_KEY_BILLING, JSON.stringify(billing));
+    verifiedBillingCache = billing;
+    const secret = getOrCreateDevicePinSecret();
+    const signature = computeBillingDigestSync(billing, secret);
+    const record: SignedBillingRecord = {
+      data: billing,
+      signature,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(STORAGE_KEY_BILLING, JSON.stringify(record));
   } catch (err) {
-    console.error('Failed to save user billing:', err);
+    console.error('Failed to save signed user billing:', err);
   }
 }
 

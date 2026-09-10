@@ -10,7 +10,38 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// Set payload limit to handle high-resolution multi-card images (up to 10 cards in 1 photo)
+// ============================================================================
+// SECURITY FOCUS 6: HTTP Security Headers & Content Security Policy (SEC-06)
+// ============================================================================
+app.use((req, res, next) => {
+  // Prevent MIME sniffing
+  res.setHeader("X-Content-Type-Options", "nosniff");
+
+  // Enforce HTTPS transport security
+  res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+
+  // Restrict execution contexts; allow required Google OAuth, GSI, and CDN fonts/workers
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://apis.google.com; " +
+    "connect-src 'self' https://accounts.google.com https://apis.google.com https://gmail.googleapis.com https://*.googleapis.com https://cdn.jsdelivr.net; " +
+    "img-src 'self' data: blob: https:; " +
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com data:; " +
+    "frame-src 'self' https://accounts.google.com; " +
+    "frame-ancestors 'self' https://*.google.com https://*.run.app https://ai.studio;"
+  );
+
+  // Apply X-Frame-Options: DENY to backend APIs to block clickjacking on data routes
+  if (req.path.startsWith("/api/")) {
+    res.setHeader("X-Frame-Options", "DENY");
+  }
+
+  next();
+});
+
+// Default payload limits for OCR scans (up to 10 cards in 1 high-res capture)
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
@@ -26,6 +57,13 @@ const ocrRateLimitMap = new Map<string, RateLimitRecord>();
 const OCR_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1-minute rolling window
 const MAX_OCR_REQUESTS_PER_MINUTE = 20; // 20 requests per minute per IP
 
+// ============================================================================
+// SECURITY FOCUS 3: Strict Rate Limiter for Backup & CRM Endpoints (SEC-03)
+// ============================================================================
+const secondaryRateLimitMap = new Map<string, RateLimitRecord>();
+const SECONDARY_RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const MAX_SECONDARY_REQUESTS_PER_MINUTE = 10; // Max 10 requests/min to prevent resource exhaustion
+
 // Periodic memory purge of expired IP records to prevent heap bloat/memory leak
 setInterval(() => {
   const now = Date.now();
@@ -34,10 +72,15 @@ setInterval(() => {
       ocrRateLimitMap.delete(ip);
     }
   }
+  for (const [ip, record] of secondaryRateLimitMap.entries()) {
+    if (now > record.resetTime) {
+      secondaryRateLimitMap.delete(ip);
+    }
+  }
 }, 5 * 60 * 1000);
 
 /**
- * Strict IP-based memory rate limiter preventing quota exhaustion & DoW attacks.
+ * Strict IP-based memory rate limiter preventing quota exhaustion & DoW attacks on OCR.
  */
 function ocrRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -74,8 +117,47 @@ function ocrRateLimiter(req: express.Request, res: express.Response, next: expre
   next();
 }
 
+/**
+ * Secondary Rate Limiter (SEC-03): Protects /api/backup/* and /api/crm/sync
+ * against denial of service, memory exhaustion, and brute-force attacks.
+ */
+function backupAndCrmRateLimiter(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const forwarded = req.headers["x-forwarded-for"];
+  const clientIp = typeof forwarded === "string"
+    ? forwarded.split(",")[0].trim()
+    : req.socket.remoteAddress || "127.0.0.1";
+
+  const now = Date.now();
+  let record = secondaryRateLimitMap.get(clientIp);
+
+  if (!record || now > record.resetTime) {
+    record = { count: 1, resetTime: now + SECONDARY_RATE_LIMIT_WINDOW_MS };
+    secondaryRateLimitMap.set(clientIp, record);
+  } else {
+    record.count++;
+  }
+
+  const remaining = Math.max(0, MAX_SECONDARY_REQUESTS_PER_MINUTE - record.count);
+  const resetSeconds = Math.ceil((record.resetTime - now) / 1000);
+
+  res.setHeader("X-RateLimit-Limit", MAX_SECONDARY_REQUESTS_PER_MINUTE);
+  res.setHeader("X-RateLimit-Remaining", remaining);
+  res.setHeader("X-RateLimit-Reset", resetSeconds);
+
+  if (record.count > MAX_SECONDARY_REQUESTS_PER_MINUTE) {
+    res.setHeader("Retry-After", resetSeconds);
+    return res.status(429).json({
+      success: false,
+      error: "Rate limit exceeded. Maximum 10 backup/CRM requests per minute allowed.",
+      retryAfterSeconds: resetSeconds,
+    });
+  }
+
+  next();
+}
+
 // ============================================================================
-// SECURITY FOCUS 2: CSRF & Authorization Token Protection Middleware
+// SECURITY FOCUS 2: CSRF & Authorization Token Protection Middleware (SEC-02)
 // ============================================================================
 const activeCsrfTokens = new Set<string>();
 
@@ -93,8 +175,9 @@ app.get("/api/auth/csrf", (req, res) => {
 });
 
 /**
- * Middleware ensuring every incoming OCR scan request carries a valid CSRF token
- * or an authenticated Authorization Bearer header from the frontend.
+ * Middleware ensuring every incoming request carries a strictly verified dynamic CSRF token
+ * or an authenticated Authorization Bearer header.
+ * SEC-02 remediation: Completely eliminates static prefix fallback bypass ('cardbase_sec_').
  */
 function verifyAuthOrCsrf(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers["authorization"];
@@ -108,11 +191,10 @@ function verifyAuthOrCsrf(req: express.Request, res: express.Response, next: exp
     }
   }
 
-  // 2. Validate dynamic CSRF token or session token
-  if (typeof csrfHeader === "string") {
-    if (activeCsrfTokens.has(csrfHeader) || csrfHeader.startsWith("cardbase_sec_")) {
-      return next();
-    }
+  // 2. Validate dynamic CSRF token strictly against server active token registry
+  // Insecure prefix fallback (`cardbase_sec_`) has been deleted.
+  if (typeof csrfHeader === "string" && activeCsrfTokens.has(csrfHeader)) {
+    return next();
   }
 
   return res.status(403).json({
@@ -379,8 +461,8 @@ ${hints ? `Context hints: ${hints}` : ""}`;
   }
 });
 
-// CRM Sync Mock/Integration Gateway
-app.post("/api/crm/sync", async (req, res) => {
+// CRM Sync Mock/Integration Gateway (SEC-03: Protected with secondary rate limiter)
+app.post("/api/crm/sync", backupAndCrmRateLimiter, async (req, res) => {
   try {
     const { provider, contacts, apiKey, options } = req.body;
 
@@ -409,44 +491,142 @@ app.post("/api/crm/sync", async (req, res) => {
   }
 });
 
-// Secure Cloud Backup Store/Restore
-let inMemoryBackupStore: Record<string, { data: any; updatedAt: string }> = {};
+// ============================================================================
+// SECURITY FOCUS 1 & 3: Isolated Cryptographic Vaults with SHA-256 Auth & Size Limits
+// ============================================================================
+interface StoredVaultRecord {
+  data: { encryptedPayload: string; metadata: any };
+  verificationHash: string; // SHA-256 hash bound to backupKey + master passphrase
+  updatedAt: string;
+}
 
-app.post("/api/backup/save", (req, res) => {
+let inMemoryBackupStore: Record<string, StoredVaultRecord> = {};
+
+// SEC-03: Explicit 2MB payload cap middleware specifically for backup endpoints
+const backupPayloadCap = express.json({ limit: "2mb" });
+
+/**
+ * SEC-01 & SEC-03: Secure Cloud Backup Save Endpoint
+ * Enforces:
+ * 1. 2MB max payload size to prevent memory exhaustion DoS.
+ * 2. 10 req/min rate limit.
+ * 3. Client UUIDv4 tenant isolation (rejects legacy shared 'cardsnap_vault_master').
+ * 4. SHA-256 verification hash binding to prevent unauthorized overwrites.
+ */
+app.post("/api/backup/save", backupAndCrmRateLimiter, backupPayloadCap, (req, res) => {
   try {
-    const { backupKey, encryptedPayload, metadata } = req.body;
-    if (!backupKey || !encryptedPayload) {
-      return res.status(400).json({ error: "Missing backup key or payload" });
+    const { backupKey, verificationHash, encryptedPayload, metadata } = req.body;
+
+    if (!backupKey || !verificationHash || !encryptedPayload) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required fields: backupKey, verificationHash, or encryptedPayload.",
+      });
     }
 
-    inMemoryBackupStore[backupKey] = {
+    // SEC-01: Prohibit legacy shared key and ensure minimum cryptographic entropy
+    if (backupKey === "cardsnap_vault_master" || typeof backupKey !== "string" || backupKey.trim().length < 16) {
+      return res.status(400).json({
+        success: false,
+        error: "Insecure or legacy vault key rejected. A unique cryptographic Vault ID is required.",
+      });
+    }
+
+    if (typeof verificationHash !== "string" || verificationHash.length < 32) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid cryptographic verification hash provided.",
+      });
+    }
+
+    const trimmedKey = backupKey.trim();
+    const existing = inMemoryBackupStore[trimmedKey];
+
+    // Verify existing vault ownership using timing-safe comparison to prevent IDOR overwrites
+    if (existing) {
+      const existingHashBuf = Buffer.from(existing.verificationHash, "utf-8");
+      const incomingHashBuf = Buffer.from(verificationHash, "utf-8");
+
+      const match =
+        existingHashBuf.length === incomingHashBuf.length &&
+        crypto.timingSafeEqual(existingHashBuf, incomingHashBuf);
+
+      if (!match) {
+        return res.status(403).json({
+          success: false,
+          error: "Access Denied: Verification hash does not match existing vault credentials.",
+        });
+      }
+    }
+
+    // Securely commit vault record with bound verification hash
+    inMemoryBackupStore[trimmedKey] = {
       data: { encryptedPayload, metadata },
+      verificationHash,
       updatedAt: new Date().toISOString(),
     };
 
     return res.json({
       success: true,
-      timestamp: inMemoryBackupStore[backupKey].updatedAt,
+      timestamp: inMemoryBackupStore[trimmedKey].updatedAt,
       sizeBytes: JSON.stringify(encryptedPayload).length,
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
-app.post("/api/backup/load", (req, res) => {
+/**
+ * SEC-01 & SEC-03: Secure Cloud Backup Restore/Load Endpoint
+ * Enforces:
+ * 1. 10 req/min rate limit.
+ * 2. SHA-256 verification hash binding to prevent unauthorized retrieval of other tenants' vaults.
+ */
+app.post("/api/backup/load", backupAndCrmRateLimiter, backupPayloadCap, (req, res) => {
   try {
-    const { backupKey } = req.body;
-    if (!backupKey || !inMemoryBackupStore[backupKey]) {
-      return res.status(404).json({ error: "No cloud backup found for this key." });
+    const { backupKey, verificationHash } = req.body;
+
+    if (!backupKey || !verificationHash) {
+      return res.status(400).json({
+        success: false,
+        error: "Missing required backupKey or verificationHash.",
+      });
+    }
+
+    const trimmedKey = backupKey.trim();
+    const existing = inMemoryBackupStore[trimmedKey];
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: "No cloud backup found for this Vault ID.",
+      });
+    }
+
+    // Verify cryptographic authorization hash using timing-safe comparison
+    const existingHashBuf = Buffer.from(existing.verificationHash, "utf-8");
+    const incomingHashBuf = Buffer.from(verificationHash, "utf-8");
+
+    const match =
+      existingHashBuf.length === incomingHashBuf.length &&
+      crypto.timingSafeEqual(existingHashBuf, incomingHashBuf);
+
+    if (!match) {
+      return res.status(403).json({
+        success: false,
+        error: "Access Denied: Invalid verification hash for this Vault ID.",
+      });
     }
 
     return res.json({
       success: true,
-      backup: inMemoryBackupStore[backupKey],
+      backup: {
+        data: existing.data,
+        updatedAt: existing.updatedAt,
+      },
     });
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
   }
 });
 
