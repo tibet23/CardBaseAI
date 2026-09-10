@@ -19,10 +19,13 @@ import {
   RefreshCw,
   Award,
   Flame,
-  Globe
+  Globe,
+  Loader2,
+  Play
 } from 'lucide-react';
 import { UserBillingState, SubscriptionPlanType, CreditPackType } from '../types';
 import { upgradeToSubscription, purchaseCreditPack, resetBillingToFree } from '../utils/storage';
+import { executePlayPurchase, PLAY_STORE_SKUS, isGooglePlayEnvironment } from '../utils/googlePlayBilling';
 
 interface PricingModalProps {
   isOpen: boolean;
@@ -42,26 +45,62 @@ export const PricingModal: React.FC<PricingModalProps> = ({
   const [activeTab, setActiveTab] = useState<'subscription' | 'event_passes' | 'compare'>('subscription');
   const [billingCycle, setBillingCycle] = useState<'annual' | 'monthly'>('annual');
   const [purchaseSuccessMessage, setPurchaseSuccessMessage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const isPlayStore = isGooglePlayEnvironment();
 
   if (!isOpen) return null;
 
-  const handleSelectSubscription = (plan: 'pro_monthly' | 'pro_annual') => {
-    const updated = upgradeToSubscription(plan, billing);
-    onBillingUpdated(updated);
-    setPurchaseSuccessMessage(
-      plan === 'pro_annual'
-        ? '🎉 Welcome to CardBase Pro Annual! Unlimited scans & CRM sync are now fully unlocked.'
-        : '🎉 Welcome to CardBase Pro Monthly! Unlimited scans & CRM sync are now fully unlocked.'
-    );
-    setTimeout(() => setPurchaseSuccessMessage(null), 5000);
+  const handleSelectSubscription = async (plan: 'pro_monthly' | 'pro_annual') => {
+    setIsProcessing(true);
+    setErrorMessage(null);
+
+    const sku = plan === 'pro_annual' ? PLAY_STORE_SKUS.PRO_ANNUAL_SUB : PLAY_STORE_SKUS.PRO_MONTHLY_SUB;
+    const res = await executePlayPurchase(sku);
+
+    setIsProcessing(false);
+
+    if (res.success) {
+      const updated = upgradeToSubscription(plan, billing);
+      onBillingUpdated(updated);
+      setPurchaseSuccessMessage(
+        plan === 'pro_annual'
+          ? '🎉 Welcome to CardBase Pro Annual! Unlimited scans & CRM sync are now fully unlocked via Google Play.'
+          : '🎉 Welcome to CardBase Pro Monthly! Unlimited scans & CRM sync are now fully unlocked via Google Play.'
+      );
+      setTimeout(() => setPurchaseSuccessMessage(null), 5000);
+    } else {
+      setErrorMessage(res.error || 'Failed to complete Google Play subscription.');
+      setTimeout(() => setErrorMessage(null), 4000);
+    }
   };
 
-  const handleBuyCredits = (pack: CreditPackType) => {
-    const updated = purchaseCreditPack(pack, billing);
-    onBillingUpdated(updated);
-    const creditsAdded = pack === 'pack_50' ? 50 : pack === 'pack_200' ? 200 : 1000;
-    setPurchaseSuccessMessage(`🎉 Success! Added +${creditsAdded} Event Pass Credits to your vault. Credits never expire.`);
-    setTimeout(() => setPurchaseSuccessMessage(null), 5000);
+  const handleBuyCredits = async (pack: CreditPackType) => {
+    setIsProcessing(true);
+    setErrorMessage(null);
+
+    const skuMap: Record<CreditPackType, string> = {
+      pack_50: PLAY_STORE_SKUS.PACK_50_CREDITS,
+      pack_200: PLAY_STORE_SKUS.PACK_200_CREDITS,
+      pack_500: PLAY_STORE_SKUS.PACK_500_CREDITS,
+      pack_1000: PLAY_STORE_SKUS.PACK_1000_CREDITS,
+    };
+
+    const res = await executePlayPurchase(skuMap[pack]);
+
+    setIsProcessing(false);
+
+    if (res.success) {
+      const updated = purchaseCreditPack(pack, billing);
+      onBillingUpdated(updated);
+      const creditsAdded = pack === 'pack_50' ? 50 : pack === 'pack_200' ? 200 : pack === 'pack_500' ? 500 : 1000;
+      setPurchaseSuccessMessage(`🎉 Success! Added +${creditsAdded} Event Pass Credits to your vault via Google Play.`);
+      setTimeout(() => setPurchaseSuccessMessage(null), 5000);
+    } else {
+      setErrorMessage(res.error || 'Failed to complete Google Play purchase.');
+      setTimeout(() => setErrorMessage(null), 4000);
+    }
   };
 
   const handleResetForTesting = () => {
@@ -122,6 +161,16 @@ export const PricingModal: React.FC<PricingModalProps> = ({
             <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
             <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
               {purchaseSuccessMessage}
+            </span>
+          </div>
+        )}
+
+        {/* Error Toast */}
+        {errorMessage && (
+          <div className="mx-6 mt-4 p-3.5 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center space-x-3 animate-in fade-in">
+            <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
+            <span className="text-xs font-semibold text-red-800 dark:text-red-200">
+              {errorMessage}
             </span>
           </div>
         )}
@@ -251,7 +300,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                     Annual Billed
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                    SAVE 50%
+                    BEST VALUE
                   </span>
                 </div>
               </div>
@@ -324,10 +373,10 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
                     <div className="flex items-baseline space-x-1.5">
                       <span className="text-3xl font-black text-slate-900 dark:text-white">
-                        {billingCycle === 'annual' ? '$2.50' : '$4.99'}
+                        {billingCycle === 'annual' ? '$3.75' : '$3.99'}
                       </span>
                       <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                        / month {billingCycle === 'annual' ? '(billed $29.99/year)' : '(billed monthly)'}
+                        / month {billingCycle === 'annual' ? '(billed $44.99/year)' : '(billed monthly)'}
                       </span>
                     </div>
 
@@ -338,7 +387,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                       </li>
                       <li className="flex items-center space-x-2">
                         <Check className="h-4 w-4 text-indigo-500 shrink-0" />
-                        <span><strong>1-Click CRM Direct Sync</strong> (HubSpot, Salesforce, Zoho, Google)</span>
+                        <span><strong>1-Click CRM Direct Sync</strong> (Apollo.io, HubSpot, Salesforce, Google Contacts)</span>
                       </li>
                       <li className="flex items-center space-x-2">
                         <Check className="h-4 w-4 text-indigo-500 shrink-0" />
@@ -362,8 +411,8 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                     <Crown className="h-4 w-4 text-amber-300" />
                     <span>
                       {billing.isSubscribed
-                        ? `Switch to Pro ${billingCycle === 'annual' ? 'Annual ($29.99/yr)' : 'Monthly ($4.99/mo)'}`
-                        : `Upgrade to Pro Unlimited (${billingCycle === 'annual' ? '$29.99/yr' : '$4.99/mo'})`}
+                        ? `Switch to Pro ${billingCycle === 'annual' ? 'Annual ($44.99/yr)' : 'Monthly ($3.99/mo)'}`
+                        : `Upgrade to Pro Unlimited (${billingCycle === 'annual' ? '$44.99/yr' : '$3.99/mo'})`}
                     </span>
                     <ArrowRight className="h-4 w-4 ml-1" />
                   </button>
@@ -394,11 +443,11 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                 </div>
               </div>
 
-              {/* 3 Event Pass Cards Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* 4 Event Pass Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                 
                 {/* 50 Cards Pack */}
-                <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1120] flex flex-col justify-between space-y-4">
+                <div className="p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1120] flex flex-col justify-between space-y-4">
                   <div className="space-y-2.5">
                     <div className="flex justify-between items-start">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -431,57 +480,97 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
                   <button
                     onClick={() => handleBuyCredits('pack_50')}
-                    className="w-full min-h-[44px] py-2.5 px-4 rounded-xl text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                    className="w-full min-h-[44px] py-2.5 px-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
                   >
                     Buy 50 Credits ($4.99)
                   </button>
                 </div>
 
-                {/* 200 Cards Summit Pass (Hero) */}
-                <div className="p-5 rounded-3xl border-2 border-blue-500 dark:border-blue-500 bg-gradient-to-b from-blue-500/10 to-transparent dark:bg-[#0c1427] flex flex-col justify-between space-y-4 relative shadow-lg shadow-blue-500/10">
-                  <div className="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-600 text-white shadow-xs">
-                    MOST POPULAR
-                  </div>
+                {/* 200 Cards Summit Pass */}
+                <div className="p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1120] flex flex-col justify-between space-y-4">
                   <div className="space-y-2.5">
                     <div className="flex justify-between items-start">
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                         Summit Pass
                       </span>
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">6.5¢ / card</span>
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">7.5¢ / card</span>
                     </div>
                     <div className="text-2xl font-black text-slate-900 dark:text-white">
-                      $12.99 <span className="text-xs font-normal text-slate-400">one-time</span>
+                      $14.99 <span className="text-xs font-normal text-slate-400">one-time</span>
                     </div>
-                    <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-center">
+                    <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 text-center">
                       <div className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">200</div>
-                      <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Card Scan Credits</div>
+                      <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Card Scan Credits</div>
                     </div>
-                    <ul className="text-xs space-y-2 text-slate-700 dark:text-slate-200 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    <ul className="text-xs space-y-2 text-slate-600 dark:text-slate-300 pt-2 border-t border-slate-100 dark:border-slate-800">
                       <li className="flex items-center space-x-1.5">
-                        <Check className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                        <span>Best for 3-day conferences</span>
+                        <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        <span>Best for 2-3 day events</span>
                       </li>
                       <li className="flex items-center space-x-1.5">
-                        <Check className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                         <span>Direct CRM Sync unlocked</span>
                       </li>
                       <li className="flex items-center space-x-1.5">
-                        <Check className="h-3.5 w-3.5 text-blue-500 shrink-0" />
-                        <span>Save 35% vs Starter pack</span>
+                        <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                        <span>Save 25% vs Starter pack</span>
                       </li>
                     </ul>
                   </div>
 
                   <button
                     onClick={() => handleBuyCredits('pack_200')}
-                    className="w-full min-h-[44px] py-2.5 px-4 rounded-xl text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all shadow-md shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                    className="w-full min-h-[44px] py-2.5 px-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
                   >
-                    Buy 200 Credits ($12.99)
+                    Buy 200 Credits ($14.99)
+                  </button>
+                </div>
+
+                {/* 500 Cards Pro Event Pass (Featured / Most Popular) */}
+                <div className="p-4 sm:p-5 rounded-3xl border-2 border-blue-500 dark:border-blue-500 bg-gradient-to-b from-blue-500/10 to-transparent dark:bg-[#0c1427] flex flex-col justify-between space-y-4 relative shadow-lg shadow-blue-500/10">
+                  <div className="absolute -top-3 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-600 text-white shadow-xs">
+                    MOST POPULAR
+                  </div>
+                  <div className="space-y-2.5">
+                    <div className="flex justify-between items-start">
+                      <span className="text-xs font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        Pro Event Pass
+                      </span>
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">6¢ / card</span>
+                    </div>
+                    <div className="text-2xl font-black text-slate-900 dark:text-white">
+                      $29.99 <span className="text-xs font-normal text-slate-400">one-time</span>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-center">
+                      <div className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">500</div>
+                      <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">Card Scan Credits</div>
+                    </div>
+                    <ul className="text-xs space-y-2 text-slate-700 dark:text-slate-200 pt-2 border-t border-slate-200 dark:border-slate-800">
+                      <li className="flex items-center space-x-1.5">
+                        <Check className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        <span>Major summits &amp; expos</span>
+                      </li>
+                      <li className="flex items-center space-x-1.5">
+                        <Check className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        <span>CRM Sync &amp; AI Email Drafts</span>
+                      </li>
+                      <li className="flex items-center space-x-1.5">
+                        <Check className="h-3.5 w-3.5 text-blue-500 shrink-0" />
+                        <span>Save 40% vs Starter pack</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <button
+                    onClick={() => handleBuyCredits('pack_500')}
+                    className="w-full min-h-[44px] py-2.5 px-3 rounded-xl text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all shadow-md shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                  >
+                    Buy 500 Credits ($29.99)
                   </button>
                 </div>
 
                 {/* 1,000 Cards Executive Enterprise Pack */}
-                <div className="p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1120] flex flex-col justify-between space-y-4">
+                <div className="p-4 sm:p-5 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0b1120] flex flex-col justify-between space-y-4">
                   <div className="space-y-2.5">
                     <div className="flex justify-between items-start">
                       <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
@@ -514,7 +603,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
 
                   <button
                     onClick={() => handleBuyCredits('pack_1000')}
-                    className="w-full min-h-[44px] py-2.5 px-4 rounded-xl text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-600 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                    className="w-full min-h-[44px] py-2.5 px-3 rounded-xl text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 hover:bg-indigo-600 hover:text-white dark:hover:bg-indigo-600 transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
                   >
                     Buy 1,000 Credits ($39.99)
                   </button>
@@ -541,7 +630,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
                   <tr>
                     <td className="py-3 px-4 font-medium">Card Scan Quota</td>
                     <td className="py-3 px-4 text-center">20 Cards Total</td>
-                    <td className="py-3 px-4 text-center">50, 200, or 1,000 Credits</td>
+                    <td className="py-3 px-4 text-center">50, 200, 500, or 1,000 Credits</td>
                     <td className="py-3 px-4 text-center font-bold text-indigo-600 dark:text-indigo-400">Unlimited Scans</td>
                   </tr>
                   <tr>

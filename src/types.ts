@@ -1,10 +1,8 @@
 export type CRMProvider =
+  | 'Apollo'
   | 'HubSpot'
   | 'Salesforce'
-  | 'Zoho'
-  | 'Pipedrive'
-  | 'GoogleContacts'
-  | 'Notion';
+  | 'GoogleContacts';
 
 export interface CardAddress {
   street?: string;
@@ -158,7 +156,7 @@ export interface EmailThreadSummary {
 }
 
 export type SubscriptionPlanType = 'free' | 'pro_monthly' | 'pro_annual';
-export type CreditPackType = 'pack_50' | 'pack_200' | 'pack_1000';
+export type CreditPackType = 'pack_50' | 'pack_200' | 'pack_500' | 'pack_1000';
 
 export interface UserBillingState {
   plan: SubscriptionPlanType;

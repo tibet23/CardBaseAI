@@ -11,10 +11,14 @@ import {
   Sun,
   Contrast,
   FlipHorizontal,
-  FileText
+  FileText,
+  RefreshCw,
+  ExternalLink,
+  ShieldAlert
 } from 'lucide-react';
 import { ContactCard } from '../types';
 import { performOfflineOCR } from '../utils/offlineOcr';
+import { getCsrfHeaders } from '../utils/apiAuth';
 import { generateSampleCardSvg } from '../utils/sampleCards';
 import { CompanyBrandFrame } from './CompanyBrandFrame';
 
@@ -41,9 +45,27 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
   const [highContrast, setHighContrast] = useState(false);
+  const [cameraUnavailable, setCameraUnavailable] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nativeCameraInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Ephemeral memory drop when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      abortControllerRef.current?.abort();
+      stopCamera();
+      setCapturedFront(null);
+      setCapturedBack(null);
+      setExtractedDraft(null);
+      setErrorMessage(null);
+      setStatusMessage('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (nativeCameraInputRef.current) nativeCameraInputRef.current.value = '';
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && !capturedFront) {
@@ -59,6 +81,12 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const startCamera = async () => {
     try {
       setErrorMessage(null);
+      setCameraUnavailable(false);
+      
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        throw new Error('Camera streaming is not supported on this browser or context.');
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: facingMode },
@@ -71,8 +99,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         videoRef.current.srcObject = mediaStream;
       }
     } catch (err: any) {
-      console.error('Camera error:', err);
-      setErrorMessage('Camera access unavailable. You can upload an image file instead.');
+      console.warn('Live camera streaming unavailable:', err?.message || err);
+      setCameraUnavailable(true);
+      setErrorMessage(
+        'Live camera stream is restricted in this window or permission was not granted. You can use your device camera directly or upload a photo.'
+      );
     }
   };
 
@@ -86,12 +117,53 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     }
   };
 
+  const handleCleanClose = () => {
+    abortControllerRef.current?.abort();
+    stopCamera();
+    setCapturedFront(null);
+    setCapturedBack(null);
+    setExtractedDraft(null);
+    setErrorMessage(null);
+    setStatusMessage('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (nativeCameraInputRef.current) nativeCameraInputRef.current.value = '';
+    onClose();
+  };
+
+  const handleLoadSampleCard = () => {
+    abortControllerRef.current?.abort();
+    // Drop previous scan data from memory before starting new scan
+    setCapturedFront(null);
+    setCapturedBack(null);
+    setExtractedDraft(null);
+
+    const sampleCard = generateSampleCardSvg(
+      'Elena Rostova',
+      'VP of Product Engineering',
+      'Apex AI Systems',
+      'elena.rostova@apexai.io',
+      '+1 (415) 890-2341',
+      'https://apexai.io',
+      '#0284c7',
+      '#38bdf8'
+    );
+    setCapturedFront(sampleCard);
+    processCardOCR(sampleCard);
+  };
+
   const handleCapture = () => {
     if (!videoRef.current) return;
     const video = videoRef.current;
+
+    // Check video readiness to prevent zero-dimension canvas draw exceptions (Bug 11)
+    if (video.readyState < 2 || video.videoWidth === 0 || video.videoHeight === 0) {
+      setErrorMessage('Camera feed is still initializing. Please wait a moment.');
+      return;
+    }
+
     const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth || 1280;
-    canvas.height = video.videoHeight || 720;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -102,6 +174,9 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
 
     if (currentSide === 'front') {
+      // Overwrite previous scan memory
+      setCapturedFront(null);
+      setExtractedDraft(null);
       setCapturedFront(dataUrl);
       processCardOCR(dataUrl);
     } else {
@@ -109,19 +184,71 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     }
   };
 
+  const MAX_UPLOAD_BYTES = 12 * 1024 * 1024; // 12MB limit (Bug 3)
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('Please upload a valid image file (JPEG, PNG, WebP).');
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setErrorMessage('Image file is too large (max 12MB). Please select a compressed photo.');
+      return;
+    }
+
+    // Overwrite previous scan memory before loading new file
+    setCapturedFront(null);
+    setCapturedBack(null);
+    setExtractedDraft(null);
+    setErrorMessage(null);
+
     const reader = new FileReader();
+    reader.onerror = () => {
+      setErrorMessage('Failed to read the selected image file.');
+    };
     reader.onload = (event) => {
       const dataUrl = event.target?.result as string;
-      setCapturedFront(dataUrl);
-      processCardOCR(dataUrl);
+      if (!dataUrl) return;
+
+      // Downscale if dimension is excessively large (> 2048px) to prevent OOM
+      const img = new Image();
+      img.onerror = () => {
+        setCapturedFront(dataUrl);
+        processCardOCR(dataUrl);
+      };
+      img.onload = () => {
+        const maxDim = 2048;
+        if (img.width > maxDim || img.height > maxDim) {
+          const scale = Math.min(maxDim / img.width, maxDim / img.height);
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const optimized = canvas.toDataURL('image/jpeg', 0.9);
+            setCapturedFront(optimized);
+            processCardOCR(optimized);
+            return;
+          }
+        }
+        setCapturedFront(dataUrl);
+        processCardOCR(dataUrl);
+      };
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
   };
 
   const processCardOCR = async (frontImage: string) => {
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsProcessing(true);
     setErrorMessage(null);
 
@@ -134,14 +261,32 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         setExtractedDraft(offlineData);
       } else {
         setStatusMessage('Extracting contact details via Gemini AI OCR...');
+        const csrfHeaders = await getCsrfHeaders();
         const response = await fetch('/api/ocr/scan', {
+          signal: controller.signal,
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...csrfHeaders,
+          },
           body: JSON.stringify({
             imageBase64: frontImage,
             mode: 'single',
           }),
         });
+
+        // Bug 9: Validate HTTP response status before JSON parse
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          let errMsg = `Server returned status ${response.status}`;
+          try {
+            const errJson = JSON.parse(errText);
+            if (errJson.error) errMsg = errJson.error;
+          } catch {
+            if (errText) errMsg = errText.slice(0, 100);
+          }
+          throw new Error(errMsg);
+        }
 
         const data = await response.json();
         if (!data.success || !data.data?.cards?.[0]) {
@@ -177,6 +322,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         });
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') return; // Cancelled request, ignore
       console.error('OCR processing error:', err);
       setErrorMessage(err.message || 'OCR extraction encountered an error.');
     } finally {
@@ -215,14 +361,26 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     };
 
     onSaveCard(newCard);
+
+    // Ephemeral drop: nullify temporary in-memory buffers immediately
+    setCapturedFront(null);
+    setCapturedBack(null);
+    setExtractedDraft(null);
+    setErrorMessage(null);
+    stopCamera();
     onClose();
   };
 
   const handleReset = () => {
+    // Explicitly overwrite old buffers with null
     setCapturedFront(null);
     setCapturedBack(null);
     setExtractedDraft(null);
+    setErrorMessage(null);
+    setStatusMessage('');
     setCurrentSide('front');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (nativeCameraInputRef.current) nativeCameraInputRef.current.value = '';
     startCamera();
   };
 
@@ -253,7 +411,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleCleanClose}
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer shrink-0"
             aria-label="Close"
           >
@@ -262,79 +420,153 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 space-y-4 sm:space-y-6">
+        <div data-private="true" data-no-track="true" className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 space-y-4 sm:space-y-6">
           
           {/* Active View: Live Camera Viewfinder or Extracted Result */}
           {!capturedFront ? (
             <div className="space-y-4">
               <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-[4/3] sm:aspect-[16/10] max-h-[460px] flex items-center justify-center border border-slate-800 shadow-inner">
                 
-                {/* Live Video Element */}
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className={`w-full h-full object-cover ${highContrast ? 'contrast-125 brightness-110' : ''}`}
-                />
+                {/* Live Video Element if available */}
+                {!cameraUnavailable ? (
+                  <>
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className={`w-full h-full object-cover ${highContrast ? 'contrast-125 brightness-110' : ''}`}
+                    />
 
-                {/* Golden Ratio Alignment Reticle */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 sm:p-8">
-                  <div className="relative w-full max-w-[480px] aspect-[1.75/1] border-2 border-blue-400/90 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex flex-col justify-between p-3">
-                    
-                    {/* Reticle Corner Marks */}
-                    <div className="flex justify-between">
-                      <div className="w-4 h-4 border-t-2 border-l-2 border-white rounded-tl" />
-                      <div className="w-4 h-4 border-t-2 border-r-2 border-white rounded-tr" />
+                    {/* Golden Ratio Alignment Reticle */}
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-4 sm:p-8">
+                      <div className="relative w-full max-w-[480px] aspect-[1.75/1] border-2 border-blue-400/90 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] flex flex-col justify-between p-3">
+                        
+                        {/* Reticle Corner Marks */}
+                        <div className="flex justify-between">
+                          <div className="w-4 h-4 border-t-2 border-l-2 border-white rounded-tl" />
+                          <div className="w-4 h-4 border-t-2 border-r-2 border-white rounded-tr" />
+                        </div>
+
+                        <div className="text-center">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider bg-black/70 text-white backdrop-blur-sm uppercase">
+                            Align Business Card Here
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between">
+                          <div className="w-4 h-4 border-b-2 border-l-2 border-white rounded-bl" />
+                          <div className="w-4 h-4 border-b-2 border-r-2 border-white rounded-br" />
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="text-center">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider bg-black/70 text-white backdrop-blur-sm uppercase">
-                        Align Business Card Here
-                      </span>
+                    {/* Top Controls Overlay */}
+                    <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex items-center space-x-2">
+                      <button
+                        onClick={() => setHighContrast(!highContrast)}
+                        className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl backdrop-blur-md transition-colors text-white ${
+                          highContrast ? 'bg-amber-500' : 'bg-black/50 hover:bg-black/70'
+                        }`}
+                        title="Toggle High Contrast Filter for glossy or dark cards"
+                      >
+                        <Contrast className="h-5 w-5" />
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          setFacingMode(facingMode === 'environment' ? 'user' : 'environment')
+                        }
+                        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-black/50 hover:bg-black/70 backdrop-blur-md text-white transition-colors"
+                        title="Flip camera"
+                      >
+                        <FlipHorizontal className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  /* Camera Restricted / Fallback View */
+                  <div className="p-6 text-center space-y-4 max-w-md mx-auto">
+                    <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center border border-amber-500/30">
+                      <Camera className="h-7 w-7" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="text-sm sm:text-base font-bold text-white">
+                        Live Stream Restricted in this Frame
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        Browser iframe permissions or device settings blocked direct stream access. You can snap a photo with your native device camera, upload an image, or try a sample card.
+                      </p>
                     </div>
 
-                    <div className="flex justify-between">
-                      <div className="w-4 h-4 border-b-2 border-l-2 border-white rounded-bl" />
-                      <div className="w-4 h-4 border-b-2 border-r-2 border-white rounded-br" />
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                      <button
+                        onClick={() => nativeCameraInputRef.current?.click()}
+                        className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all shadow-md shadow-blue-600/30 flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <Camera className="h-4 w-4" />
+                        <span>Snap Device Photo</span>
+                      </button>
+
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all border border-slate-700 flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <Upload className="h-4 w-4" />
+                        <span>Upload File</span>
+                      </button>
+
+                      <button
+                        onClick={handleLoadSampleCard}
+                        className="min-h-[44px] px-4 py-2 rounded-xl text-xs font-bold text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 active:scale-95 transition-all border border-amber-800/80 flex items-center space-x-1.5 cursor-pointer"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        <span>Try Sample Card</span>
+                      </button>
+
+                      <button
+                        onClick={startCamera}
+                        className="min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors flex items-center space-x-1 cursor-pointer"
+                        title="Retry requesting live camera access"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        <span>Retry</span>
+                      </button>
                     </div>
                   </div>
-                </div>
-
-                {/* Top Controls Overlay */}
-                <div className="absolute top-3 right-3 sm:top-4 sm:right-4 flex items-center space-x-2">
-                  <button
-                    onClick={() => setHighContrast(!highContrast)}
-                    className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl backdrop-blur-md transition-colors text-white ${
-                      highContrast ? 'bg-amber-500' : 'bg-black/50 hover:bg-black/70'
-                    }`}
-                    title="Toggle High Contrast Filter for glossy or dark cards"
-                  >
-                    <Contrast className="h-5 w-5" />
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      setFacingMode(facingMode === 'environment' ? 'user' : 'environment')
-                    }
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-black/50 hover:bg-black/70 backdrop-blur-md text-white transition-colors"
-                    title="Flip camera"
-                  >
-                    <FlipHorizontal className="h-5 w-5" />
-                  </button>
-                </div>
+                )}
               </div>
 
-              {/* Bottom Shutter Controls */}
+              {/* Bottom Shutter & Secondary Inputs */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
-                <div>
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="min-h-[44px] text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 flex items-center cursor-pointer px-2"
                   >
                     <Upload className="h-4 w-4 mr-1.5 shrink-0" />
-                    Or upload card image file
+                    Upload image file
                   </button>
+
+                  <button
+                    onClick={handleLoadSampleCard}
+                    className="min-h-[44px] text-xs font-bold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 flex items-center cursor-pointer px-2"
+                  >
+                    <Sparkles className="h-4 w-4 mr-1.5 shrink-0" />
+                    Load demo card
+                  </button>
+
+                  {/* Native Device Camera input with capture="environment" */}
+                  <input
+                    ref={nativeCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+
+                  {/* Standard file upload input */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -345,13 +577,23 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
                 </div>
 
                 <div className="w-full sm:w-auto">
-                  <button
-                    onClick={handleCapture}
-                    className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
-                  >
-                    <Camera className="h-5 w-5 mr-2 shrink-0" />
-                    Scan Front of Card
-                  </button>
+                  {!cameraUnavailable ? (
+                    <button
+                      onClick={handleCapture}
+                      className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                    >
+                      <Camera className="h-5 w-5 mr-2 shrink-0" />
+                      Scan Front of Card
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => nativeCameraInputRef.current?.click()}
+                      className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                    >
+                      <Camera className="h-5 w-5 mr-2 shrink-0" />
+                      Open Device Camera
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -573,7 +815,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         {/* Footer */}
         <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-between">
           <button
-            onClick={onClose}
+            onClick={handleCleanClose}
             className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
           >
             Cancel

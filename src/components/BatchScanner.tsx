@@ -22,6 +22,7 @@ import { ContactCard, BoundingBox } from '../types';
 import { cropCardFromImage } from '../utils/cardCropper';
 import { generateMultiCardPhotoDesk, generateSampleCardSvg } from '../utils/sampleCards';
 import { performOfflineOCR } from '../utils/offlineOcr';
+import { getCsrfHeaders } from '../utils/apiAuth';
 import { CompanyBrandFrame } from './CompanyBrandFrame';
 
 interface BatchScannerProps {
@@ -75,22 +76,56 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
   const [bulkTagInput, setBulkTagInput] = useState<string>('Batch Scan');
   const [autoCrmSync, setAutoCrmSync] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nativeCameraInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraUnavailable, setCameraUnavailable] = useState(false);
 
-  // Stop camera when closing or switching tabs
+  // Stop camera and drop ephemeral memory when closing or switching tabs
   useEffect(() => {
-    if (!isOpen || activeTab !== 'camera') {
+    if (!isOpen) {
+      stopCamera();
+      // Drop ephemeral base64 image strings and detected cards from memory
+      setImagePreview(null);
+      setDetectedCards([]);
+      setSelectedCardId(null);
+      setEditingCardId(null);
+      setErrorMessage(null);
+      setProcessingStatus('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (nativeCameraInputRef.current) nativeCameraInputRef.current.value = '';
+    } else if (activeTab !== 'camera') {
       stopCamera();
     }
   }, [isOpen, activeTab]);
 
+  const handleCleanClose = () => {
+    stopCamera();
+    setImagePreview(null);
+    setDetectedCards([]);
+    setSelectedCardId(null);
+    setEditingCardId(null);
+    setErrorMessage(null);
+    setProcessingStatus('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (nativeCameraInputRef.current) nativeCameraInputRef.current.value = '';
+    onClose();
+  };
+
   const startCamera = async () => {
     try {
-      setIsCameraActive(true);
+      setErrorMessage(null);
+      setCameraUnavailable(false);
+      setIsCameraActive(false);
+
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        throw new Error('Camera streaming is not supported in this environment.');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
@@ -98,13 +133,15 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
           height: { ideal: 1080 },
         },
       });
+      setIsCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
     } catch (err: any) {
-      console.error('Camera access error:', err);
-      setErrorMessage('Could not open camera. Please check permissions or upload a photo.');
+      console.warn('Batch camera stream unavailable:', err?.message || err);
+      setCameraUnavailable(true);
       setIsCameraActive(false);
+      setErrorMessage('Camera access is restricted or denied in this frame. You can take a photo with your device camera or upload a photo.');
     }
   };
 
@@ -162,10 +199,15 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
   };
 
   const handleProcessImage = async (dataUrl: string) => {
+    // Drop previous image preview and detected cards from memory before new scan
+    setImagePreview(null);
+    setDetectedCards([]);
+    setSelectedCardId(null);
+    setEditingCardId(null);
+
     setImagePreview(dataUrl);
     setIsProcessing(true);
     setErrorMessage(null);
-    setDetectedCards([]);
 
     try {
       if (isOffline) {
@@ -207,10 +249,14 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
 
       // Online Multi-Card Server OCR with Gemini 3.7 Flash
       setProcessingStatus('Analyzing multi-card photo (Detecting 1 to 10+ cards)...');
+      const csrfHeaders = await getCsrfHeaders();
       
       const response = await fetch('/api/ocr/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...csrfHeaders,
+        },
         body: JSON.stringify({
           imageBase64: dataUrl,
           mode: 'batch',
@@ -309,66 +355,87 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
   };
 
   const handleSaveSelectedCards = () => {
+    if (isSaving) return;
     const selected = detectedCards.filter((c) => c.selected);
     if (!selected.length) {
       alert('Please select at least one card to save.');
       return;
     }
 
-    const finalCards: ContactCard[] = selected.map((d) => {
-      const tags = [...d.suggestedTags];
-      if (bulkTagInput.trim() && !tags.includes(bulkTagInput.trim())) {
-        tags.push(bulkTagInput.trim());
-      }
+    setIsSaving(true);
+    try {
+      const finalCards: ContactCard[] = selected.map((d) => {
+        const tags = [...d.suggestedTags];
+        if (bulkTagInput.trim() && !tags.includes(bulkTagInput.trim())) {
+          tags.push(bulkTagInput.trim());
+        }
 
-      return {
-        id: d.id,
-        fullName: d.fullName,
-        jobTitle: d.jobTitle,
-        company: d.company,
-        department: d.department,
-        email: d.email,
-        phone: d.phone,
-        mobilePhone: d.mobilePhone,
-        website: d.website,
-        address: {
-          street: d.street,
-          city: d.city,
-          state: d.state,
-          zip: d.zip,
-          country: d.country,
-        },
-        social: {
-          linkedin: d.linkedin,
-          twitter: d.twitter,
-        },
-        category: d.category,
-        tags: tags,
-        notes: d.notes,
-        cardImage: d.croppedImage,
-        originalMultiCardImage: imagePreview || undefined,
-        boundingBox: d.boundingBox,
-        confidenceScore: d.confidenceScore,
-        scannedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        isFavorite: false,
-        isOfflineScanned: isOffline,
-        primaryColorHex: d.primaryColorHex,
-        crmSyncStatus: autoCrmSync
-          ? {
-              HubSpot: {
-                synced: true,
-                syncedAt: new Date().toISOString(),
-                remoteId: `hs_${Math.random().toString(36).substring(2, 8)}`,
-                provider: 'HubSpot',
-              },
-            }
-          : {},
-      };
-    });
+        return {
+          id: d.id,
+          fullName: d.fullName,
+          jobTitle: d.jobTitle,
+          company: d.company,
+          department: d.department,
+          email: d.email,
+          phone: d.phone,
+          mobilePhone: d.mobilePhone,
+          website: d.website,
+          address: {
+            street: d.street,
+            city: d.city,
+            state: d.state,
+            zip: d.zip,
+            country: d.country,
+          },
+          social: {
+            linkedin: d.linkedin,
+            twitter: d.twitter,
+          },
+          category: d.category,
+          tags: tags,
+          notes: d.notes,
+          cardImage: d.croppedImage,
+          originalMultiCardImage: imagePreview || undefined,
+          boundingBox: d.boundingBox,
+          confidenceScore: d.confidenceScore,
+          scannedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          isFavorite: false,
+          isOfflineScanned: isOffline,
+          primaryColorHex: d.primaryColorHex,
+          crmSyncStatus: autoCrmSync
+            ? {
+                Apollo: {
+                  synced: true,
+                  syncedAt: new Date().toISOString(),
+                  remoteId: `apl_${Math.random().toString(36).substring(2, 8)}`,
+                  provider: 'Apollo',
+                },
+                HubSpot: {
+                  synced: true,
+                  syncedAt: new Date().toISOString(),
+                  remoteId: `hs_${Math.random().toString(36).substring(2, 8)}`,
+                  provider: 'HubSpot',
+                },
+              }
+            : {},
+        };
+      });
 
-    onSaveBatchCards(finalCards);
-    onClose();
+      onSaveBatchCards(finalCards);
+
+      // Ephemeral drop: nullify temporary in-memory buffers immediately after saving locally
+      setImagePreview(null);
+      setDetectedCards([]);
+      setSelectedCardId(null);
+      setEditingCardId(null);
+      setErrorMessage(null);
+      setProcessingStatus('');
+      stopCamera();
+      onClose();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -401,7 +468,7 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleCleanClose}
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors cursor-pointer shrink-0"
             aria-label="Close"
           >
@@ -410,7 +477,7 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 space-y-4 sm:space-y-6">
+        <div data-private="true" data-no-track="true" className="flex-1 overflow-y-auto p-3.5 sm:p-5 md:p-6 space-y-4 sm:space-y-6">
           
           {/* Step 1: Input Tabs & Image Selection (when no cards extracted yet or to re-upload) */}
           {detectedCards.length === 0 && !isProcessing && (
@@ -497,47 +564,119 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
               {activeTab === 'camera' && (
                 <div className="space-y-4">
                   <div className="relative rounded-2xl overflow-hidden bg-slate-950 aspect-[3/4] sm:aspect-[4/5] max-h-[480px] sm:max-h-[520px] max-w-md mx-auto flex items-center justify-center border border-slate-800 shadow-xl">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                    />
+                    {!cameraUnavailable && isCameraActive ? (
+                      <>
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          className="w-full h-full object-cover"
+                        />
 
-                    {/* Multi-Card Alignment Overlay Grid: 10 Cards (2 Columns x 5 Rows) */}
-                    <div className="absolute inset-0 pointer-events-none p-3 sm:p-4 flex flex-col justify-between">
-                      <div className="flex justify-between items-center text-white/90 text-[10px] sm:text-[11px] font-mono bg-black/70 px-2.5 py-1 rounded-lg backdrop-blur-md self-start border border-white/10 shadow-sm">
-                        <span>OVERHEAD 10-CARD GRID (2 × 5)</span>
-                      </div>
-
-                      {/* Guide Grid Lines (2 columns, 5 rows) */}
-                      <div className="grid grid-cols-2 grid-rows-5 gap-1.5 sm:gap-2 flex-1 my-2 border-2 border-dashed border-white/35 rounded-xl p-1.5 sm:p-2 bg-black/15 backdrop-blur-[0.5px]">
-                        {Array.from({ length: 10 }).map((_, idx) => (
-                          <div
-                            key={idx}
-                            className="border border-white/25 rounded-lg flex items-center justify-center text-white/80 text-[9px] sm:text-[11px] font-mono font-bold bg-white/10 backdrop-blur-xs shadow-2xs"
-                          >
-                            Card Slot #{idx + 1}
+                        {/* Multi-Card Alignment Overlay Grid: 10 Cards (2 Columns x 5 Rows) */}
+                        <div className="absolute inset-0 pointer-events-none p-3 sm:p-4 flex flex-col justify-between">
+                          <div className="flex justify-between items-center text-white/90 text-[10px] sm:text-[11px] font-mono bg-black/70 px-2.5 py-1 rounded-lg backdrop-blur-md self-start border border-white/10 shadow-sm">
+                            <span>OVERHEAD 10-CARD GRID (2 × 5)</span>
                           </div>
-                        ))}
-                      </div>
 
-                      <div className="text-center text-white/90 text-[10px] sm:text-[11px] font-medium bg-black/70 py-1 px-2.5 rounded-lg backdrop-blur-md border border-white/10 shadow-sm">
-                        Align up to 10 cards in 2 columns on a flat surface and snap
+                          {/* Guide Grid Lines (2 columns, 5 rows) */}
+                          <div className="grid grid-cols-2 grid-rows-5 gap-1.5 sm:gap-2 flex-1 my-2 border-2 border-dashed border-white/35 rounded-xl p-1.5 sm:p-2 bg-black/15 backdrop-blur-[0.5px]">
+                            {Array.from({ length: 10 }).map((_, idx) => (
+                              <div
+                                key={idx}
+                                className="border border-white/25 rounded-lg flex items-center justify-center text-white/80 text-[9px] sm:text-[11px] font-mono font-bold bg-white/10 backdrop-blur-xs shadow-2xs"
+                              >
+                                Card Slot #{idx + 1}
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="text-center text-white/90 text-[10px] sm:text-[11px] font-medium bg-black/70 py-1 px-2.5 rounded-lg backdrop-blur-md border border-white/10 shadow-sm">
+                            Align up to 10 cards in 2 columns on a flat surface and snap
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      /* Live Camera Restricted View */
+                      <div className="p-6 text-center space-y-4 max-w-sm mx-auto">
+                        <div className="w-14 h-14 rounded-2xl bg-amber-500/20 text-amber-400 mx-auto flex items-center justify-center border border-amber-500/30">
+                          <Camera className="h-7 w-7" />
+                        </div>
+                        <div className="space-y-1">
+                          <h3 className="text-sm sm:text-base font-bold text-white">
+                            Live Stream Restricted
+                          </h3>
+                          <p className="text-xs text-slate-400">
+                            Browser permissions or iframe sandbox prevented direct live video streaming. Use your native device camera directly to capture an overhead photo of up to 10 cards at once!
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col gap-2.5 pt-2">
+                          <button
+                            onClick={() => nativeCameraInputRef.current?.click()}
+                            className="min-h-[44px] w-full px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all shadow-md shadow-blue-600/30 flex items-center justify-center space-x-1.5 cursor-pointer"
+                          >
+                            <Camera className="h-4 w-4" />
+                            <span>Snap with Device Camera</span>
+                          </button>
+
+                          <button
+                            onClick={() => fileInputRef.current?.click()}
+                            className="min-h-[44px] w-full px-4 py-2.5 rounded-xl text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 active:scale-95 transition-all border border-slate-700 flex items-center justify-center space-x-1.5 cursor-pointer"
+                          >
+                            <Upload className="h-4 w-4" />
+                            <span>Upload Desk Photo</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleSelectDemoDesk(10)}
+                            className="min-h-[44px] w-full px-4 py-2.5 rounded-xl text-xs font-bold text-amber-300 bg-amber-950/60 hover:bg-amber-900/60 active:scale-95 transition-all border border-amber-800/80 flex items-center justify-center space-x-1.5 cursor-pointer"
+                          >
+                            <Zap className="h-4 w-4 text-amber-400" />
+                            <span>Try 10-Card Demo Desk</span>
+                          </button>
+
+                          <button
+                            onClick={startCamera}
+                            className="min-h-[44px] w-full px-3 py-2 rounded-xl text-xs font-bold text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors flex items-center justify-center space-x-1 cursor-pointer"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            <span>Retry Requesting Camera</span>
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
+                  {/* Native Device Camera input with capture="environment" */}
+                  <input
+                    ref={nativeCameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+
                   <div className="flex justify-center">
-                    <button
-                      onClick={captureCameraPhoto}
-                      disabled={!isCameraActive}
-                      className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer disabled:opacity-50 border border-blue-400/30"
-                    >
-                      <Camera className="h-5 w-5 mr-2 shrink-0" />
-                      Capture Photo &amp; Run Batch OCR
-                    </button>
+                    {!cameraUnavailable && isCameraActive ? (
+                      <button
+                        onClick={captureCameraPhoto}
+                        className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                      >
+                        <Camera className="h-5 w-5 mr-2 shrink-0" />
+                        Capture Photo &amp; Run Batch OCR
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => nativeCameraInputRef.current?.click()}
+                        className="w-full sm:w-auto min-h-[48px] inline-flex items-center justify-center px-8 py-3 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-lg shadow-blue-600/30 cursor-pointer border border-blue-400/30"
+                      >
+                        <Camera className="h-5 w-5 mr-2 shrink-0" />
+                        Open Device Camera for 10 Cards
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -925,8 +1064,8 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
                       onChange={(e) => setAutoCrmSync(e.target.checked)}
                       className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                     />
-                    <Share2 className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-                    <span>Auto-sync with CRM (HubSpot / Salesforce)</span>
+                    <Share2 className="h-3.5 w-3.5 text-violet-500 shrink-0" />
+                    <span>Auto-sync with CRM (Apollo.io, HubSpot, Salesforce)</span>
                   </label>
                 </div>
               </div>
@@ -939,7 +1078,7 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
         {/* Modal Footer */}
         <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50/80 dark:bg-[#0b1120]/80 flex items-center justify-between gap-3">
           <button
-            onClick={onClose}
+            onClick={handleCleanClose}
             className="min-h-[44px] px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             Cancel
@@ -948,11 +1087,13 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
           {detectedCards.length > 0 && (
             <button
               onClick={handleSaveSelectedCards}
-              disabled={selectedCount === 0}
+              disabled={selectedCount === 0 || isSaving}
               className="min-h-[44px] inline-flex items-center justify-center px-5 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 transition-all shadow-md shadow-blue-500/25 cursor-pointer disabled:opacity-50 border border-blue-400/30"
             >
               <CheckCircle2 className="h-4 w-4 mr-2 shrink-0" />
-              Save {selectedCount} {selectedCount === 1 ? 'Card' : 'Cards'} to Library
+              {isSaving
+                ? 'Saving Cards...'
+                : `Save ${selectedCount} ${selectedCount === 1 ? 'Card' : 'Cards'} to Library`}
             </button>
           )}
         </div>

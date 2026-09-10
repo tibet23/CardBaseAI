@@ -1,6 +1,6 @@
 {
-  "name": "CardBase AI - Business Card OCR & CRM Hub",
-  "description": "Digitize, organize, and manage business cards with batch 1-to-10 multi-card OCR, live camera scanning, offline mode, CRM sync, VCF/CSV export, and encrypted cloud backup.",
+  "name": "CardBase - 10-in-1 Business Card Scanner",
+  "description": "Minimalist business card digitizer with 10-in-1 batch OCR, smart contact extraction, CRM sync (Apollo.io, HubSpot, Salesforce, Google Contacts), vCard QR codes, and CSV export.",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

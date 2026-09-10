@@ -1,6 +1,18 @@
 import { ContactCard } from '../types';
 
 /**
+ * Escapes characters for RFC 2426 vCard format (newlines, backslashes, commas, semicolons).
+ */
+function escapeVCard(text?: string): string {
+  if (!text) return '';
+  return String(text)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+/**
  * Formats a contact card into a standard vCard 3.0 text block.
  */
 export function generateVCardString(card: ContactCard): string {
@@ -11,52 +23,52 @@ export function generateVCardString(card: ContactCard): string {
   const lines: string[] = [
     'BEGIN:VCARD',
     'VERSION:3.0',
-    `N:${lastName};${firstName};;;`,
-    `FN:${card.fullName}`,
+    `N:${escapeVCard(lastName)};${escapeVCard(firstName)};;;`,
+    `FN:${escapeVCard(card.fullName)}`,
   ];
 
   if (card.company) {
-    lines.push(`ORG:${card.company}${card.department ? ';' + card.department : ''}`);
+    lines.push(`ORG:${escapeVCard(card.company)}${card.department ? ';' + escapeVCard(card.department) : ''}`);
   }
 
   if (card.jobTitle) {
-    lines.push(`TITLE:${card.jobTitle}`);
+    lines.push(`TITLE:${escapeVCard(card.jobTitle)}`);
   }
 
   if (card.email) {
-    lines.push(`EMAIL;TYPE=INTERNET,WORK:${card.email}`);
+    lines.push(`EMAIL;TYPE=INTERNET,WORK:${card.email.trim()}`);
   }
 
   if (card.phone) {
-    lines.push(`TEL;TYPE=WORK,VOICE:${card.phone}`);
+    lines.push(`TEL;TYPE=WORK,VOICE:${card.phone.trim()}`);
   }
 
   if (card.mobilePhone) {
-    lines.push(`TEL;TYPE=CELL,VOICE:${card.mobilePhone}`);
+    lines.push(`TEL;TYPE=CELL,VOICE:${card.mobilePhone.trim()}`);
   }
 
   if (card.website) {
-    lines.push(`URL:${card.website}`);
+    lines.push(`URL:${card.website.trim()}`);
   }
 
   if (card.address && (card.address.street || card.address.city || card.address.state || card.address.country)) {
-    const street = card.address.street || '';
-    const city = card.address.city || '';
-    const state = card.address.state || '';
-    const zip = card.address.zip || '';
-    const country = card.address.country || '';
+    const street = escapeVCard(card.address.street || '');
+    const city = escapeVCard(card.address.city || '');
+    const state = escapeVCard(card.address.state || '');
+    const zip = escapeVCard(card.address.zip || '');
+    const country = escapeVCard(card.address.country || '');
     lines.push(`ADR;TYPE=WORK:;;${street};${city};${state};${zip};${country}`);
   }
 
   if (card.social?.linkedin) {
-    lines.push(`X-SOCIALPROFILE;TYPE=linkedin:${card.social.linkedin}`);
+    lines.push(`X-SOCIALPROFILE;TYPE=linkedin:${card.social.linkedin.trim()}`);
   }
   if (card.social?.twitter) {
-    lines.push(`X-SOCIALPROFILE;TYPE=twitter:${card.social.twitter}`);
+    lines.push(`X-SOCIALPROFILE;TYPE=twitter:${card.social.twitter.trim()}`);
   }
 
   if (card.tags && card.tags.length > 0) {
-    lines.push(`CATEGORIES:${card.tags.join(',')}`);
+    lines.push(`CATEGORIES:${card.tags.map((t) => escapeVCard(t)).join(',')}`);
   }
 
   const notesCombined = [
@@ -66,7 +78,7 @@ export function generateVCardString(card: ContactCard): string {
   ].filter(Boolean).join(' | ');
 
   if (notesCombined) {
-    lines.push(`NOTE:${notesCombined.replace(/\n/g, '\\n')}`);
+    lines.push(`NOTE:${escapeVCard(notesCombined)}`);
   }
 
   lines.push('END:VCARD');
@@ -97,11 +109,15 @@ export function exportToVCF(cards: ContactCard[], filename?: string): void {
 }
 
 /**
- * Escapes a field for CSV format.
+ * Escapes a field for CSV format with anti-formula-injection protection (CWE-1236).
  */
 function escapeCSV(value?: string | number): string {
   if (value === undefined || value === null) return '""';
-  const str = String(value).replace(/"/g, '""');
+  let str = String(value).replace(/"/g, '""');
+  // If string starts with formula trigger characters (=, +, -, @, tab, CR), prepend single quote to neutralize
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = "'" + str;
+  }
   return `"${str}"`;
 }
 
@@ -132,9 +148,10 @@ export function exportToCSV(cards: ContactCard[], filename?: string): void {
     'Notes',
     'Confidence Score (%)',
     'Scanned Date',
+    'Apollo.io Synced',
     'HubSpot Synced',
     'Salesforce Synced',
-    'Zoho Synced'
+    'Google Contacts Synced'
   ];
 
   const rows = cards.map((c) => [
@@ -158,9 +175,10 @@ export function exportToCSV(cards: ContactCard[], filename?: string): void {
     escapeCSV(c.notes),
     escapeCSV(c.confidenceScore),
     escapeCSV(c.scannedAt),
+    escapeCSV(c.crmSyncStatus?.Apollo?.synced ? 'Yes' : 'No'),
     escapeCSV(c.crmSyncStatus?.HubSpot?.synced ? 'Yes' : 'No'),
     escapeCSV(c.crmSyncStatus?.Salesforce?.synced ? 'Yes' : 'No'),
-    escapeCSV(c.crmSyncStatus?.Zoho?.synced ? 'Yes' : 'No'),
+    escapeCSV(c.crmSyncStatus?.GoogleContacts?.synced ? 'Yes' : 'No'),
   ].join(','));
 
   // Prepend UTF-8 Byte Order Mark (BOM) so Microsoft Excel opens special characters correctly

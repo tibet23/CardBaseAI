@@ -33,28 +33,10 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
   cards,
   onCardsSynced,
 }) => {
-  const [selectedProvider, setSelectedProvider] = useState<CRMProvider>('HubSpot');
+  const [selectedProvider, setSelectedProvider] = useState<CRMProvider>('Apollo');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatusMsg, setSyncStatusMsg] = useState('');
-  const [activeTab, setActiveTab] = useState<'integrations' | 'mapping' | 'logs'>('integrations');
-  const [syncLogs, setSyncLogs] = useState<
-    Array<{ id: string; time: string; provider: string; count: number; status: string }>
-  >([
-    {
-      id: 'log_1',
-      time: '2026-08-26 14:10',
-      provider: 'HubSpot',
-      count: 4,
-      status: 'Success (4 contacts synced)',
-    },
-    {
-      id: 'log_2',
-      time: '2026-08-25 09:30',
-      provider: 'Google Contacts',
-      count: 2,
-      status: 'Success (2 contacts synced)',
-    },
-  ]);
+  const [activeTab, setActiveTab] = useState<'integrations' | 'mapping'>('integrations');
 
   if (!isOpen) return null;
 
@@ -92,7 +74,7 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
     setSyncStatusMsg(`Preparing contacts for ${provider} API...`);
 
     const unsyncedCards = cards.filter(
-      (c) => !c.crmSyncStatus[provider]?.synced
+      (c) => !c.crmSyncStatus?.[provider]?.synced
     );
     const targetList = unsyncedCards.length > 0 ? unsyncedCards : cards;
 
@@ -119,7 +101,7 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
           return {
             ...c,
             crmSyncStatus: {
-              ...c.crmSyncStatus,
+              ...(c.crmSyncStatus || {}),
               [provider]: {
                 synced: true,
                 syncedAt: new Date().toISOString(),
@@ -133,19 +115,6 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
       });
 
       onCardsSynced(updatedCards, provider);
-
-      // Add log
-      setSyncLogs((prev) => [
-        {
-          id: `log_${Date.now()}`,
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          provider,
-          count: targetList.length,
-          status: `Success (${targetList.length} contacts synchronized)`,
-        },
-        ...prev,
-      ]);
-
       setSyncStatusMsg(`Successfully synchronized ${targetList.length} contacts!`);
     } catch (err: any) {
       console.error('CRM sync error:', err);
@@ -157,18 +126,16 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
 
   const getProviderIconColor = (p: CRMProvider) => {
     switch (p) {
+      case 'Apollo': return 'text-violet-600 bg-violet-100 dark:bg-violet-950/60';
       case 'HubSpot': return 'text-orange-500 bg-orange-100 dark:bg-orange-950/60';
       case 'Salesforce': return 'text-sky-500 bg-sky-100 dark:bg-sky-950/60';
-      case 'Zoho': return 'text-amber-600 bg-amber-100 dark:bg-amber-950/60';
       case 'GoogleContacts': return 'text-blue-500 bg-blue-100 dark:bg-blue-950/60';
-      case 'Pipedrive': return 'text-emerald-500 bg-emerald-100 dark:bg-emerald-950/60';
-      case 'Notion': return 'text-purple-500 bg-purple-100 dark:bg-purple-950/60';
       default: return 'text-blue-500 bg-blue-100';
     }
   };
 
   const unsyncedForSelected = cards.filter(
-    (c) => !c.crmSyncStatus[selectedProvider]?.synced
+    (c) => !c.crmSyncStatus?.[selectedProvider]?.synced
   ).length;
 
   return (
@@ -178,18 +145,18 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
           <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-500/20">
+            <div className="p-2 rounded-xl bg-violet-600 text-white shadow-sm shadow-violet-500/20">
               <Share2 className="h-5 w-5" />
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center">
                 CRM &amp; Contact Sync Hub
-                <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                <span className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300">
                   Real-time Gateway
                 </span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Synchronize scanned business card contacts directly to your sales pipeline and address books
+                Synchronize contacts directly with Apollo.io, HubSpot, Salesforce, and Google Contacts
               </p>
             </div>
           </div>
@@ -207,7 +174,7 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
             onClick={() => setActiveTab('integrations')}
             className={`py-3 border-b-2 transition-colors cursor-pointer ${
               activeTab === 'integrations'
-                ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                ? 'border-violet-600 text-violet-600 dark:border-violet-400 dark:text-violet-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -217,21 +184,11 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
             onClick={() => setActiveTab('mapping')}
             className={`py-3 border-b-2 transition-colors cursor-pointer ${
               activeTab === 'mapping'
-                ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                ? 'border-violet-600 text-violet-600 dark:border-violet-400 dark:text-violet-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
             }`}
           >
             Field Mapping
-          </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`py-3 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'logs'
-                ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            Sync History &amp; Logs
           </button>
         </div>
 
@@ -450,35 +407,6 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
                     />
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'logs' && (
-            <div className="space-y-3">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Recent Synchronization Audits
-              </div>
-
-              <div className="space-y-2">
-                {syncLogs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between text-xs"
-                  >
-                    <div className="flex items-center space-x-3">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      <div>
-                        <div className="font-bold text-slate-900 dark:text-white">
-                          {log.provider} • {log.count} Contacts
-                        </div>
-                        <div className="text-[11px] text-slate-500">{log.status}</div>
-                      </div>
-                    </div>
-
-                    <span className="text-[11px] text-slate-400">{log.time}</span>
-                  </div>
-                ))}
               </div>
             </div>
           )}

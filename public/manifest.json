@@ -1,12 +1,29 @@
 {
-  "name": "CardBase AI - Business Card Scanner",
+  "id": "com.cardbase.ai",
+  "name": "CardBase AI - Business Card Scanner & CRM",
   "short_name": "CardBase AI",
-  "description": "Scan 1-10 business cards at once with AI OCR and auto-sync with CRM",
-  "start_url": "/",
+  "description": "Digitize 1-10 business cards at once with AI OCR, instant contact parsing, and automatic CRM synchronization.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#090d16",
   "theme_color": "#2563eb",
-  "orientation": "portrait-primary",
+  "lang": "en",
+  "dir": "ltr",
+  "prefer_related_applications": false,
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "com.cardbase.ai",
+      "url": "https://play.google.com/store/apps/details?id=com.cardbase.ai"
+    }
+  ],
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "/icon-192.png",
@@ -21,21 +38,58 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["business", "productivity", "utilities"],
   "shortcuts": [
     {
       "name": "Batch 10-Card Scan",
       "short_name": "Batch Scan",
       "description": "Snap overhead photo of up to 10 cards",
       "url": "/?action=batch",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     },
     {
-      "name": "Live Camera Scanner",
+      "name": "Single Card Scan",
       "short_name": "Single Scan",
-      "description": "Align single card in reticle",
+      "description": "Scan a single card with live camera viewfinder",
       "url": "/?action=camera",
-      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "CRM Sync Hub",
+      "short_name": "CRM Hub",
+      "description": "Sync contacts with HubSpot, Salesforce & Google",
+      "url": "/?action=crm",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
     }
-  ]
+  ],
+  "share_target": {
+    "action": "/?action=share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "name",
+      "text": "description",
+      "url": "link",
+      "files": [
+        {
+          "name": "card_image",
+          "accept": ["image/jpeg", "image/png", "image/webp"]
+        }
+      ]
+    }
+  }
 }

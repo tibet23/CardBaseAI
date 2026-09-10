@@ -1,0 +1,53 @@
+{
+  "packageId": "com.cardbase.ai",
+  "host": "cardbase.ai",
+  "name": "CardBase AI - Business Card Scanner",
+  "launcherName": "CardBase AI",
+  "themeColor": "#2563EB",
+  "themeColorDark": "#090D16",
+  "navigationColor": "#090D16",
+  "navigationColorDark": "#090D16",
+  "navigationDividerColor": "#1E293B",
+  "navigationDividerColorDark": "#1E293B",
+  "backgroundColor": "#090D16",
+  "enableNotifications": true,
+  "startUrl": "/?source=playstore",
+  "iconUrl": "https://cardbase.ai/icon-512.png",
+  "maskableIconUrl": "https://cardbase.ai/icon-512.png",
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "signing": {
+    "file": "android.keystore",
+    "alias": "cardbase-release"
+  },
+  "splashScreenFadeOutDuration": 300,
+  "enableSiteSettingsShortcut": true,
+  "shortcuts": [
+    {
+      "name": "10-Card Batch Scan",
+      "shortName": "Batch Scan",
+      "url": "/?action=batch",
+      "icon": "icon-192.png"
+    },
+    {
+      "name": "Single Card Scan",
+      "shortName": "Single Scan",
+      "url": "/?action=camera",
+      "icon": "icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://cardbase.ai/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "playBilling": {
+      "enabled": true
+    },
+    "locationDelegation": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  }
+}

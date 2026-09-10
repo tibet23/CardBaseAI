@@ -27,6 +27,22 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   );
 }
 
+/**
+ * High-performance, chunked Uint8Array to Base64 encoder that avoids call-stack overflow
+ * and string allocation starvation on large backup payloads.
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000; // 32KB chunks
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(
+      null,
+      bytes.subarray(i, i + chunkSize) as unknown as number[]
+    );
+  }
+  return btoa(binary);
+}
+
 export async function encryptData(plainText: string, password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -45,13 +61,7 @@ export async function encryptData(plainText: string, password: string): Promise<
   combined.set(iv, salt.length);
   combined.set(new Uint8Array(encryptedContent), salt.length + iv.length);
 
-  // Convert to base64
-  let binary = '';
-  const len = combined.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(combined[i]);
-  }
-  return btoa(binary);
+  return uint8ArrayToBase64(combined);
 }
 
 export async function decryptData(encryptedBase64: string, password: string): Promise<string> {

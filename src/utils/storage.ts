@@ -1,5 +1,6 @@
-import { ContactCard, CRMConfig, CategoryConfig, UserBillingState, SubscriptionPlanType, CreditPackType } from '../types';
+import { ContactCard, CRMConfig, CRMProvider, CategoryConfig, UserBillingState, SubscriptionPlanType, CreditPackType } from '../types';
 import { INITIAL_SAMPLE_CARDS, DEFAULT_CATEGORIES } from './sampleCards';
+import { encryptData, decryptData } from './encryption';
 
 const STORAGE_KEY_CARDS = 'cardsnap_contacts_v3';
 const STORAGE_KEY_CATEGORIES = 'cardsnap_categories_v3';
@@ -36,6 +37,21 @@ const DEFAULT_SETTINGS: AppSettings = {
 
 const DEFAULT_CRM_CONFIGS: CRMConfig[] = [
   {
+    provider: 'Apollo',
+    name: 'Apollo.io CRM & Leads',
+    connected: true,
+    apiKey: 'apl_live_sample_token_839210',
+    autoSyncOnScan: true,
+    lastSyncAt: new Date().toISOString(),
+    fieldMapping: {
+      nameField: 'first_name,last_name',
+      companyField: 'organization_name',
+      emailField: 'email',
+      phoneField: 'sanitized_phone',
+      titleField: 'title',
+    },
+  },
+  {
     provider: 'HubSpot',
     name: 'HubSpot CRM',
     connected: true,
@@ -67,20 +83,6 @@ const DEFAULT_CRM_CONFIGS: CRMConfig[] = [
     },
   },
   {
-    provider: 'Zoho',
-    name: 'Zoho CRM',
-    connected: false,
-    apiKey: '',
-    autoSyncOnScan: false,
-    fieldMapping: {
-      nameField: 'Full_Name',
-      companyField: 'Company',
-      emailField: 'Email',
-      phoneField: 'Phone',
-      titleField: 'Designation',
-    },
-  },
-  {
     provider: 'GoogleContacts',
     name: 'Google Contacts Workspace',
     connected: true,
@@ -93,34 +95,6 @@ const DEFAULT_CRM_CONFIGS: CRMConfig[] = [
       emailField: 'emailAddresses.value',
       phoneField: 'phoneNumbers.value',
       titleField: 'organizations.title',
-    },
-  },
-  {
-    provider: 'Pipedrive',
-    name: 'Pipedrive CRM',
-    connected: false,
-    apiKey: '',
-    autoSyncOnScan: false,
-    fieldMapping: {
-      nameField: 'name',
-      companyField: 'org_id',
-      emailField: 'email',
-      phoneField: 'phone',
-      titleField: 'job_title',
-    },
-  },
-  {
-    provider: 'Notion',
-    name: 'Notion Contacts Database',
-    connected: false,
-    apiKey: '',
-    autoSyncOnScan: false,
-    fieldMapping: {
-      nameField: 'Name',
-      companyField: 'Company',
-      emailField: 'Email',
-      phoneField: 'Phone',
-      titleField: 'Role',
     },
   },
 ];
@@ -150,11 +124,38 @@ export function resetToSampleCards(): ContactCard[] {
   return INITIAL_SAMPLE_CARDS;
 }
 
-export function saveCards(cards: ContactCard[]): void {
+export function saveCards(cards: ContactCard[]): boolean {
   try {
     localStorage.setItem(STORAGE_KEY_CARDS, JSON.stringify(cards));
-  } catch (err) {
+    return true;
+  } catch (err: any) {
     console.error('Failed to save cards to storage:', err);
+    // Detect browser storage quota exceeded
+    if (
+      err.name === 'QuotaExceededError' ||
+      err.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      err.code === 22 ||
+      err.code === 1014
+    ) {
+      // Recovery strategy: Strip heavy multi-card original frames and secondary back images
+      // to preserve all contact details, names, phones, notes, tags, and CRM statuses.
+      try {
+        const lightweightCards = cards.map((c) => ({
+          ...c,
+          cardBackImage: undefined,
+          originalMultiCardImage: undefined,
+        }));
+        localStorage.setItem(STORAGE_KEY_CARDS, JSON.stringify(lightweightCards));
+        console.warn('Saved cards in lightweight mode due to browser storage quota limit.');
+        return true;
+      } catch (innerErr) {
+        console.error('Lightweight save also exceeded storage quota:', innerErr);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('cardbase:storage-quota-exceeded'));
+        }
+      }
+    }
+    return false;
   }
 }
 
@@ -190,24 +191,163 @@ export function resetCategoriesToDefault(): CategoryConfig[] {
   return DEFAULT_CATEGORIES;
 }
 
-export function getCrmConfigs(): CRMConfig[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_CRM);
-    if (!raw) {
-      saveCrmConfigs(DEFAULT_CRM_CONFIGS);
-      return DEFAULT_CRM_CONFIGS;
+const STORAGE_KEY_CRM_SALT = 'cardsnap_crm_device_salt_v1';
+const STORAGE_KEY_SESSION_PIN = 'cardsnap_crm_session_pin_v1';
+const CRM_ENC_PREFIX = 'enc:v1:';
+
+// Synchronous in-memory decrypted cache for instantaneous zero-latency component reads
+let decryptedCrmCache: CRMConfig[] | null = null;
+
+/**
+ * Derives a high-entropy device-bound secret tied to the user's local session and device PIN/salt.
+ * Generates a cryptographically random 128-bit salt and persists it in localStorage,
+ * coupled with a session PIN stored in sessionStorage.
+ * This ensures credentials cannot be recovered simply by copying the raw localStorage dump to another device.
+ */
+export function getOrCreateDevicePinSecret(): string {
+  let sessionPin: string | null = null;
+  if (typeof sessionStorage !== 'undefined') {
+    sessionPin = sessionStorage.getItem(STORAGE_KEY_SESSION_PIN);
+    if (!sessionPin) {
+      const pinBuf = new Uint8Array(16);
+      crypto.getRandomValues(pinBuf);
+      sessionPin = Array.from(pinBuf).map((b) => b.toString(16).padStart(2, '0')).join('');
+      sessionStorage.setItem(STORAGE_KEY_SESSION_PIN, sessionPin);
     }
-    return JSON.parse(raw);
-  } catch {
-    return DEFAULT_CRM_CONFIGS;
+  } else {
+    sessionPin = 'fallback_session_pin_node';
+  }
+
+  let deviceSalt: string | null = null;
+  if (typeof localStorage !== 'undefined') {
+    deviceSalt = localStorage.getItem(STORAGE_KEY_CRM_SALT);
+    if (!deviceSalt) {
+      const saltBuf = new Uint8Array(16);
+      crypto.getRandomValues(saltBuf);
+      deviceSalt = Array.from(saltBuf).map((b) => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem(STORAGE_KEY_CRM_SALT, deviceSalt);
+    }
+  } else {
+    deviceSalt = 'fallback_device_salt_node';
+  }
+
+  return `crm_pin_${sessionPin}_${deviceSalt}`;
+}
+
+/**
+ * Encrypts a CRM API key before writing to browser storage.
+ * Uses PBKDF2 (100,000 iterations) + AES-GCM 256-bit with chunked base64 encoding from encryption.ts.
+ */
+export async function encryptCrmApiKey(apiKey: string): Promise<string> {
+  if (!apiKey || apiKey.startsWith(CRM_ENC_PREFIX)) return apiKey;
+  const secret = getOrCreateDevicePinSecret();
+  const ciphertext = await encryptData(apiKey, secret);
+  return `${CRM_ENC_PREFIX}${ciphertext}`;
+}
+
+/**
+ * Decrypts a stored CRM API key using the device session PIN.
+ * Recovers cleartext token strictly for in-memory CRM API dispatches.
+ */
+export async function decryptCrmApiKey(encryptedKey: string): Promise<string> {
+  if (!encryptedKey || !encryptedKey.startsWith(CRM_ENC_PREFIX)) return encryptedKey;
+  try {
+    const raw = encryptedKey.slice(CRM_ENC_PREFIX.length);
+    const secret = getOrCreateDevicePinSecret();
+    return await decryptData(raw, secret);
+  } catch (err) {
+    console.warn('Failed to decrypt CRM token using device PIN:', err);
+    return '';
+  }
+}
+
+/**
+ * Asynchronously encrypts all user-provided CRM API keys before persisting to localStorage.
+ * Guarantees zero plaintext tokens exist in unencrypted browser storage.
+ */
+export async function saveCrmConfigsAsync(configs: CRMConfig[]): Promise<void> {
+  decryptedCrmCache = configs;
+  try {
+    const encrypted = await Promise.all(
+      configs.map(async (c) => {
+        if (!c.apiKey) return c;
+        const encryptedKey = await encryptCrmApiKey(c.apiKey);
+        return { ...c, apiKey: encryptedKey };
+      })
+    );
+    localStorage.setItem(STORAGE_KEY_CRM, JSON.stringify(encrypted));
+  } catch (err) {
+    console.error('Failed to securely store encrypted CRM credentials:', err);
   }
 }
 
 export function saveCrmConfigs(configs: CRMConfig[]): void {
+  decryptedCrmCache = configs;
+  // Non-blocking asynchronous AES-GCM encryption & persistence
+  saveCrmConfigsAsync(configs).catch((err) => {
+    console.error('Background CRM encryption error:', err);
+  });
+}
+
+/**
+ * Loads CRM configurations from storage and decrypts all encrypted API tokens using the device PIN.
+ */
+export async function loadEncryptedCrmConfigs(): Promise<CRMConfig[]> {
+  const allowed: CRMProvider[] = ['Apollo', 'HubSpot', 'Salesforce', 'GoogleContacts'];
   try {
-    localStorage.setItem(STORAGE_KEY_CRM, JSON.stringify(configs));
+    const raw = localStorage.getItem(STORAGE_KEY_CRM);
+    if (!raw) {
+      decryptedCrmCache = DEFAULT_CRM_CONFIGS;
+      return DEFAULT_CRM_CONFIGS;
+    }
+    const parsed: CRMConfig[] = JSON.parse(raw);
+    const decrypted = await Promise.all(
+      parsed.map(async (c) => {
+        if (!c.apiKey) return c;
+        const plainKey = await decryptCrmApiKey(c.apiKey);
+        return { ...c, apiKey: plainKey };
+      })
+    );
+    const filtered = decrypted.filter((c) => allowed.includes(c.provider));
+    for (const def of DEFAULT_CRM_CONFIGS) {
+      if (!filtered.some((f) => f.provider === def.provider)) {
+        filtered.push(def);
+      }
+    }
+    decryptedCrmCache = filtered;
+    return filtered;
   } catch (err) {
-    console.error('Failed to save CRM configs:', err);
+    console.error('Failed to load/decrypt CRM configs:', err);
+    return DEFAULT_CRM_CONFIGS;
+  }
+}
+
+export function getCrmConfigs(): CRMConfig[] {
+  if (decryptedCrmCache) {
+    return decryptedCrmCache;
+  }
+  const allowed: CRMProvider[] = ['Apollo', 'HubSpot', 'Salesforce', 'GoogleContacts'];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CRM);
+    if (!raw) {
+      saveCrmConfigs(DEFAULT_CRM_CONFIGS);
+      decryptedCrmCache = DEFAULT_CRM_CONFIGS;
+      return DEFAULT_CRM_CONFIGS;
+    }
+    const parsed: CRMConfig[] = JSON.parse(raw);
+    const filtered = parsed.filter((c) => allowed.includes(c.provider));
+    for (const def of DEFAULT_CRM_CONFIGS) {
+      if (!filtered.some((f) => f.provider === def.provider)) {
+        filtered.push(def);
+      }
+    }
+    // Asynchronously decrypt into cache in background if encrypted tokens exist
+    loadEncryptedCrmConfigs().catch((err) => {
+      console.error('Async CRM token decryption failed:', err);
+    });
+    return filtered;
+  } catch {
+    return DEFAULT_CRM_CONFIGS;
   }
 }
 
@@ -344,7 +484,7 @@ export function upgradeToSubscription(
     subscribedAt: new Date().toISOString(),
     billingCycleEnd: new Date(Date.now() + (plan === 'pro_annual' ? 365 : 30) * 24 * 60 * 60 * 1000).toISOString(),
     lastPurchaseDate: new Date().toISOString(),
-    lastPurchaseDescription: plan === 'pro_annual' ? 'Pro Annual Plan ($29.99/year)' : 'Pro Monthly Plan ($4.99/month)',
+    lastPurchaseDescription: plan === 'pro_annual' ? 'Pro Annual Plan ($44.99/year)' : 'Pro Monthly Plan ($3.99/month)',
   };
   saveUserBilling(updated);
   return updated;
@@ -356,7 +496,8 @@ export function purchaseCreditPack(
 ): UserBillingState {
   const creditsMap: Record<CreditPackType, { count: number; name: string; price: string }> = {
     pack_50: { count: 50, name: 'Expo Starter Pass (50 Cards)', price: '$4.99' },
-    pack_200: { count: 200, name: 'Summit Pass (200 Cards)', price: '$12.99' },
+    pack_200: { count: 200, name: 'Summit Pass (200 Cards)', price: '$14.99' },
+    pack_500: { count: 500, name: 'Pro Event Pass (500 Cards)', price: '$29.99' },
     pack_1000: { count: 1000, name: 'Executive Enterprise Pass (1,000 Cards)', price: '$39.99' },
   };
 

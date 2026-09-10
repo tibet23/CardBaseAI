@@ -108,6 +108,19 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
     return `${text.slice(0, 4)} **** ${text.slice(-2)}`;
   };
 
+  const sanitizeExternalUrl = (url?: string): string | undefined => {
+    if (!url) return undefined;
+    const trimmed = url.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    // Disallow dangerous URI schemes like javascript:, data:, vbscript:
+    if (/^[a-z0-9+.-]+:/i.test(trimmed)) return undefined;
+    return `https://${trimmed}`;
+  };
+
+  const safeWebsiteUrl = sanitizeExternalUrl(formData.website);
+  const safeLinkedinUrl = sanitizeExternalUrl(formData.social?.linkedin);
+  const safeTwitterUrl = sanitizeExternalUrl(formData.social?.twitter);
+
   const fullAddress = [
     formData.address?.street,
     formData.address?.city,
@@ -341,39 +354,91 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
               <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-900 dark:text-white flex items-center">
-                    <Share2 className="h-3.5 w-3.5 mr-1.5 text-indigo-500" />
-                    CRM Sync Status
+                    <Share2 className="h-3.5 w-3.5 mr-1.5 text-violet-500" />
+                    CRM Sync Pipeline
                   </span>
-                  <span className="text-[10px] text-slate-400">HubSpot / Salesforce</span>
+                  <span className="text-[10px] text-slate-400">Apollo / HubSpot / Salesforce / Google</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
+                  {/* Apollo.io CRM */}
                   <button
-                    onClick={() => onPushToCrm(formData, 'HubSpot')}
-                    className={`p-2 rounded-lg text-xs font-semibold flex items-center justify-between border cursor-pointer ${
-                      formData.crmSyncStatus?.HubSpot?.synced
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
-                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-400'
+                    id="crm-sync-apollo-btn"
+                    onClick={() => onPushToCrm(formData, 'Apollo')}
+                    className={`p-2 rounded-lg text-xs font-semibold flex items-center justify-between border cursor-pointer transition-all ${
+                      formData.crmSyncStatus?.Apollo?.synced
+                        ? 'bg-violet-50 text-violet-800 border-violet-200 dark:bg-violet-950/50 dark:text-violet-300 dark:border-violet-800'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-violet-400'
                     }`}
                   >
-                    <span>HubSpot</span>
-                    {formData.crmSyncStatus?.HubSpot?.synced ? (
-                      <span className="text-[10px] text-emerald-600 font-bold">✓ Synced</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-violet-500"></span>
+                      Apollo.io
+                    </span>
+                    {formData.crmSyncStatus?.Apollo?.synced ? (
+                      <span className="text-[10px] text-violet-600 font-bold">✓ Synced</span>
                     ) : (
-                      <span className="text-[10px] text-blue-600 font-medium">Sync ➔</span>
+                      <span className="text-[10px] text-violet-600 font-medium">Sync ➔</span>
                     )}
                   </button>
 
+                  {/* HubSpot */}
                   <button
+                    id="crm-sync-hubspot-btn"
+                    onClick={() => onPushToCrm(formData, 'HubSpot')}
+                    className={`p-2 rounded-lg text-xs font-semibold flex items-center justify-between border cursor-pointer transition-all ${
+                      formData.crmSyncStatus?.HubSpot?.synced
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-orange-400'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                      HubSpot
+                    </span>
+                    {formData.crmSyncStatus?.HubSpot?.synced ? (
+                      <span className="text-[10px] text-emerald-600 font-bold">✓ Synced</span>
+                    ) : (
+                      <span className="text-[10px] text-orange-600 font-medium">Sync ➔</span>
+                    )}
+                  </button>
+
+                  {/* Salesforce */}
+                  <button
+                    id="crm-sync-salesforce-btn"
                     onClick={() => onPushToCrm(formData, 'Salesforce')}
-                    className={`p-2 rounded-lg text-xs font-semibold flex items-center justify-between border cursor-pointer ${
+                    className={`p-2 rounded-lg text-xs font-semibold flex items-center justify-between border cursor-pointer transition-all ${
                       formData.crmSyncStatus?.Salesforce?.synced
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+                        : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-sky-400'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+                      Salesforce
+                    </span>
+                    {formData.crmSyncStatus?.Salesforce?.synced ? (
+                      <span className="text-[10px] text-emerald-600 font-bold">✓ Synced</span>
+                    ) : (
+                      <span className="text-[10px] text-sky-600 font-medium">Sync ➔</span>
+                    )}
+                  </button>
+
+                  {/* Google Contacts */}
+                  <button
+                    id="crm-sync-google-btn"
+                    onClick={() => onPushToCrm(formData, 'GoogleContacts')}
+                    className={`p-2 rounded-lg text-xs font-semibold flex items-center justify-between border cursor-pointer transition-all ${
+                      formData.crmSyncStatus?.GoogleContacts?.synced
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
                         : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-400'
                     }`}
                   >
-                    <span>Salesforce</span>
-                    {formData.crmSyncStatus?.Salesforce?.synced ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                      Google Contacts
+                    </span>
+                    {formData.crmSyncStatus?.GoogleContacts?.synced ? (
                       <span className="text-[10px] text-emerald-600 font-bold">✓ Synced</span>
                     ) : (
                       <span className="text-[10px] text-blue-600 font-medium">Sync ➔</span>
@@ -440,15 +505,15 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
                       </div>
                     )}
 
-                    {formData.website && (
+                    {safeWebsiteUrl && (
                       <div className="flex items-start space-x-3">
                         <Globe className="h-4 w-4 text-slate-400 mt-0.5 shrink-0" />
                         <div>
                           <div className="text-[11px] text-slate-400">Website</div>
                           <a
-                            href={formData.website.startsWith('http') ? formData.website : `https://${formData.website}`}
+                            href={safeWebsiteUrl}
                             target="_blank"
-                            rel="noreferrer"
+                            rel="noopener noreferrer"
                             className="font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center"
                           >
                             {formData.website} <ExternalLink className="h-3 w-3 ml-1" />
@@ -471,23 +536,23 @@ export const CardDetailModal: React.FC<CardDetailModalProps> = ({
                   </div>
 
                   {/* Social Handles */}
-                  {(formData.social?.linkedin || formData.social?.twitter) && (
+                  {(safeLinkedinUrl || safeTwitterUrl) && (
                     <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 flex items-center space-x-4 text-xs font-semibold">
-                      {formData.social?.linkedin && (
+                      {safeLinkedinUrl && (
                         <a
-                          href={formData.social.linkedin}
+                          href={safeLinkedinUrl}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           className="text-blue-600 dark:text-blue-400 hover:underline"
                         >
                           LinkedIn Profile ➔
                         </a>
                       )}
-                      {formData.social?.twitter && (
+                      {safeTwitterUrl && (
                         <a
-                          href={formData.social.twitter}
+                          href={safeTwitterUrl}
                           target="_blank"
-                          rel="noreferrer"
+                          rel="noopener noreferrer"
                           className="text-sky-600 dark:text-sky-400 hover:underline"
                         >
                           Twitter / X ➔
