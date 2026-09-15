@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { ContactCard, BoundingBox } from '../types';
 import { cropCardFromImage } from '../utils/cardCropper';
-import { generateMultiCardPhotoDesk, generateSampleCardSvg } from '../utils/sampleCards';
+import { generateMultiCardPhotoDesk, generateSampleCardSvg, renderMultiCardDeskToJpeg } from '../utils/sampleCards';
 import { performOfflineOCR } from '../utils/offlineOcr';
 import { getCsrfHeaders } from '../utils/apiAuth';
 import { CompanyBrandFrame } from './CompanyBrandFrame';
@@ -193,9 +193,16 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
     }
   };
 
-  const handleSelectDemoDesk = (cardCount: 4 | 6 | 8 | 10) => {
-    const demoDataUrl = generateMultiCardPhotoDesk(cardCount);
-    handleProcessImage(demoDataUrl);
+  const handleSelectDemoDesk = async (cardCount: 4 | 6 | 8 | 10) => {
+    setIsProcessing(true);
+    setProcessingStatus(`Rendering high-resolution ${cardCount}-card photo desk...`);
+    try {
+      const demoDataUrl = await renderMultiCardDeskToJpeg(cardCount);
+      handleProcessImage(demoDataUrl);
+    } catch {
+      const fallbackUrl = generateMultiCardPhotoDesk(cardCount);
+      handleProcessImage(fallbackUrl);
+    }
   };
 
   const handleProcessImage = async (dataUrl: string) => {
@@ -264,7 +271,14 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
       });
 
       if (!response.ok) {
-        throw new Error(`Server returned status ${response.status}`);
+        let errMsg = `Server returned status ${response.status}`;
+        try {
+          const errJson = await response.json();
+          if (errJson.error) errMsg = errJson.error;
+        } catch {
+          // ignore parsing error
+        }
+        throw new Error(errMsg);
       }
 
       const resData = await response.json();

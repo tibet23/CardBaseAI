@@ -111,71 +111,241 @@ export function generateSampleCardSvg(
 }
 
 /**
- * Generates an image representing a multi-card desk photo for batch scanner testing.
+ * Generates an image representing a multi-card desk photo for batch scanner testing (up to 10 cards).
  */
 export function generateMultiCardPhotoDesk(cardCount: number = 4): string {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  const count = Math.min(Math.max(cardCount, 1), 10);
+  
+  // High-contrast, beautifully styled business card data for desk simulation
+  const cardsData = [
+    {
+      company: 'Apex AI Systems',
+      name: 'Elena Rostova',
+      title: 'VP of Product Engineering',
+      email: 'elena.rostova@apexai.io',
+      phone: '+1 (415) 890-2341',
+      web: 'https://apexai.io',
+      color: '#0284c7',
+    },
+    {
+      company: 'Vance Sterling Capital',
+      name: 'Marcus Vance',
+      title: 'Managing Director & Partner',
+      email: 'm.vance@vancesterling.com',
+      phone: '+1 (212) 555-0198',
+      web: 'https://vancesterling.com',
+      color: '#0f766e',
+    },
+    {
+      company: 'Sterling Reed & Vance',
+      name: 'Amira Hassan',
+      title: 'Senior Partner, IP Litigation',
+      email: 'a.hassan@srvlaw.com',
+      phone: '+44 20 7946 0881',
+      web: 'https://srvlaw.com',
+      color: '#b45309',
+    },
+    {
+      company: 'QuantumLeap Robotics',
+      name: 'Hiroshi Tanaka',
+      title: 'Chief Technology Officer',
+      email: 'h.tanaka@quantumleap.tech',
+      phone: '+81 3 5555 0143',
+      web: 'https://quantumleap.tech',
+      color: '#0369a1',
+    },
+    {
+      company: 'CloudScale Architectures',
+      name: 'Sarah Jenkins',
+      title: 'Chief Information Officer',
+      email: 's.jenkins@cloudscale.net',
+      phone: '+1 (206) 555-0149',
+      web: 'https://cloudscale.net',
+      color: '#4f46e5',
+    },
+    {
+      company: 'Synapse Genomics',
+      name: 'Dr. Aris Thorne',
+      title: 'Chief Scientific Officer',
+      email: 'a.thorne@synapsegen.com',
+      phone: '+1 (617) 555-0192',
+      web: 'https://synapsegen.com',
+      color: '#0d9488',
+    },
+    {
+      company: 'Aethelgard Clean Energy',
+      name: 'Clara Oswald',
+      title: 'Director of Grid Operations',
+      email: 'c.oswald@aethelgard.energy',
+      phone: '+44 1632 960812',
+      web: 'https://aethelgard.energy',
+      color: '#16a34a',
+    },
+    {
+      company: 'Hyperion Space Systems',
+      name: 'David Kim',
+      title: 'Senior Avionics Engineer',
+      email: 'd.kim@hyperionspace.com',
+      phone: '+1 (310) 555-0164',
+      web: 'https://hyperionspace.com',
+      color: '#7c3aed',
+    },
+    {
+      company: 'Emerald Isle FinTech',
+      name: 'Liam O\'Connor',
+      title: 'Head of Algorithmic Trading',
+      email: 'l.oconnor@emeraldfintech.ie',
+      phone: '+353 1 496 0199',
+      web: 'https://emeraldfintech.ie',
+      color: '#059669',
+    },
+    {
+      company: 'Veritas Legal Counsel',
+      name: 'Maya Lin',
+      title: 'Managing Partner, IP',
+      email: 'm.lin@veritasip.com',
+      phone: '+1 (202) 555-0187',
+      web: 'https://veritasip.com',
+      color: '#d97706',
+    },
+  ];
+
+  // 10 distinct coordinates across an executive desk surface (width 1600, height 1200)
+  const cardLayouts = [
+    { x: 80, y: 70, rot: -3 },
+    { x: 580, y: 80, rot: 2.5 },
+    { x: 1080, y: 70, rot: -2 },
+    { x: 90, y: 440, rot: 3 },
+    { x: 590, y: 450, rot: -1.5 },
+    { x: 1090, y: 440, rot: 2 },
+    { x: 80, y: 810, rot: -2 },
+    { x: 580, y: 820, rot: 3.5 },
+    { x: 1080, y: 810, rot: -3 },
+    { x: 340, y: 440, rot: 1 },
+  ];
+
+  const deskWidth = count > 6 ? 1600 : 1200;
+  const deskHeight = count > 6 ? 1200 : 900;
+
+  // Custom positioning tailored for 4, 6, 8, or 10 cards
+  let activeLayouts = cardLayouts.slice(0, count);
+  if (count === 4) {
+    activeLayouts = [
+      { x: 90, y: 90, rot: -3 },
+      { x: 640, y: 110, rot: 3.5 },
+      { x: 110, y: 490, rot: 2 },
+      { x: 650, y: 480, rot: -3.5 },
+    ];
+  } else if (count === 6) {
+    activeLayouts = [
+      { x: 70, y: 80, rot: -3 },
+      { x: 580, y: 90, rot: 2 },
+      { x: 1080, y: 80, rot: -2 },
+      { x: 80, y: 480, rot: 2.5 },
+      { x: 590, y: 470, rot: -3 },
+      { x: 1070, y: 485, rot: 3 },
+    ];
+  }
+
+  const cardSvgElements = activeLayouts.map((pos, idx) => {
+    const c = cardsData[idx % cardsData.length];
+    return `
+    <!-- Card ${idx + 1}: ${c.name} (${c.company}) -->
+    <g transform="translate(${pos.x}, ${pos.y}) rotate(${pos.rot})" filter="url(#deskCardShadow)">
+      <rect width="450" height="260" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+      <rect x="0" y="0" width="12" height="260" fill="${c.color}"/>
+      <circle cx="410" cy="40" r="14" fill="${c.color}" opacity="0.15"/>
+      <circle cx="410" cy="40" r="6" fill="${c.color}"/>
+      <text x="32" y="52" font-family="system-ui, -apple-system, sans-serif" font-size="19" font-weight="bold" fill="#0f172a">${c.company}</text>
+      <text x="32" y="104" font-family="system-ui, -apple-system, sans-serif" font-size="21" font-weight="bold" fill="${c.color}">${c.name}</text>
+      <text x="32" y="132" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" fill="#64748b">${c.title}</text>
+      <line x1="32" y1="150" x2="415" y2="150" stroke="#e2e8f0" stroke-width="1.5"/>
+      <text x="32" y="180" font-family="monospace, sans-serif" font-size="12" fill="#334155">✉ ${c.email}</text>
+      <text x="32" y="208" font-family="monospace, sans-serif" font-size="12" fill="#334155">☎ ${c.phone}</text>
+      <text x="32" y="236" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#0284c7">🌐 ${c.web}</text>
+    </g>`;
+  }).join('\n');
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${deskWidth}" height="${deskHeight}" viewBox="0 0 ${deskWidth} ${deskHeight}">
     <!-- Desk Wood / Slate Surface Background -->
-    <rect width="1200" height="900" fill="#1e293b"/>
+    <rect width="${deskWidth}" height="${deskHeight}" fill="#1e293b"/>
     <defs>
       <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
         <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#334155" stroke-width="1"/>
       </pattern>
       <filter id="deskCardShadow" x="-10%" y="-10%" width="120%" height="120%">
-        <feDropShadow dx="8" dy="12" stdDeviation="10" flood-opacity="0.45"/>
+        <feDropShadow dx="6" dy="10" stdDeviation="8" flood-opacity="0.5"/>
       </filter>
     </defs>
-    <rect width="1200" height="900" fill="url(#grid)" opacity="0.4"/>
-
-    <!-- Card 1 (Top Left) -->
-    <g transform="translate(100, 100) rotate(-3)" filter="url(#deskCardShadow)">
-      <rect width="460" height="270" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="0" y="0" width="14" height="270" fill="#0284c7"/>
-      <text x="36" y="55" font-family="sans-serif" font-size="20" font-weight="bold" fill="#0f172a">Apex AI Systems</text>
-      <text x="36" y="110" font-family="sans-serif" font-size="22" font-weight="bold" fill="#0284c7">Elena Rostova</text>
-      <text x="36" y="138" font-family="sans-serif" font-size="13" font-weight="bold" fill="#64748b">VP of Product Engineering</text>
-      <text x="36" y="190" font-family="sans-serif" font-size="13" fill="#334155">✉ elena.rostova@apexai.io</text>
-      <text x="36" y="220" font-family="sans-serif" font-size="13" fill="#334155">☎ +1 (415) 890-2341</text>
-      <text x="36" y="250" font-family="sans-serif" font-size="13" fill="#334155">🌐 https://apexai.io</text>
-    </g>
-
-    <!-- Card 2 (Top Right) -->
-    <g transform="translate(640, 120) rotate(4)" filter="url(#deskCardShadow)">
-      <rect width="460" height="270" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="0" y="0" width="14" height="270" fill="#0f766e"/>
-      <text x="36" y="55" font-family="sans-serif" font-size="20" font-weight="bold" fill="#0f172a">Vance Sterling Capital</text>
-      <text x="36" y="110" font-family="sans-serif" font-size="22" font-weight="bold" fill="#0f766e">Marcus Vance</text>
-      <text x="36" y="138" font-family="sans-serif" font-size="13" font-weight="bold" fill="#64748b">Managing Director &amp; Partner</text>
-      <text x="36" y="190" font-family="sans-serif" font-size="13" fill="#334155">✉ m.vance@vancesterling.com</text>
-      <text x="36" y="220" font-family="sans-serif" font-size="13" fill="#334155">☎ +1 (212) 555-0198</text>
-      <text x="36" y="250" font-family="sans-serif" font-size="13" fill="#334155">🌐 https://vancesterling.com</text>
-    </g>
-
-    <!-- Card 3 (Bottom Left) -->
-    <g transform="translate(120, 500) rotate(2)" filter="url(#deskCardShadow)">
-      <rect width="460" height="270" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="0" y="0" width="14" height="270" fill="#b45309"/>
-      <text x="36" y="55" font-family="sans-serif" font-size="20" font-weight="bold" fill="#0f172a">Sterling, Reed &amp; Vance LLP</text>
-      <text x="36" y="110" font-family="sans-serif" font-size="22" font-weight="bold" fill="#b45309">Amira Hassan</text>
-      <text x="36" y="138" font-family="sans-serif" font-size="13" font-weight="bold" fill="#64748b">Senior Partner, IP Litigation</text>
-      <text x="36" y="190" font-family="sans-serif" font-size="13" fill="#334155">✉ a.hassan@srvlaw.com</text>
-      <text x="36" y="220" font-family="sans-serif" font-size="13" fill="#334155">☎ +44 20 7946 0881</text>
-      <text x="36" y="250" font-family="sans-serif" font-size="13" fill="#334155">🌐 https://srvlaw.com</text>
-    </g>
-
-    <!-- Card 4 (Bottom Right) -->
-    <g transform="translate(660, 480) rotate(-4)" filter="url(#deskCardShadow)">
-      <rect width="460" height="270" rx="10" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-      <rect x="0" y="0" width="14" height="270" fill="#0284c7"/>
-      <text x="36" y="55" font-family="sans-serif" font-size="20" font-weight="bold" fill="#0f172a">QuantumLeap Robotics</text>
-      <text x="36" y="110" font-family="sans-serif" font-size="22" font-weight="bold" fill="#0284c7">Hiroshi Tanaka</text>
-      <text x="36" y="138" font-family="sans-serif" font-size="13" font-weight="bold" fill="#64748b">Chief Technology Officer</text>
-      <text x="36" y="190" font-family="sans-serif" font-size="13" fill="#334155">✉ h.tanaka@quantumleap.tech</text>
-      <text x="36" y="220" font-family="sans-serif" font-size="13" fill="#334155">☎ +81 3 5555 0143</text>
-      <text x="36" y="250" font-family="sans-serif" font-size="13" fill="#334155">🌐 https://quantumleap.tech</text>
-    </g>
+    <rect width="${deskWidth}" height="${deskHeight}" fill="url(#grid)" opacity="0.35"/>
+    ${cardSvgElements}
   </svg>`;
+
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Converts an SVG data URL to a genuine JPEG data URL with authentic magic numbers (FF D8 FF)
+ * via an off-screen HTML5 Canvas. Falls back to SVG data URL if canvas is not available.
+ */
+export async function svgToJpegDataUrl(svgDataUrl: string, width = 1400, height = 1000): Promise<string> {
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return svgDataUrl;
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    const timer = setTimeout(() => {
+      resolve(svgDataUrl);
+    }, 4000);
+
+    img.onload = () => {
+      clearTimeout(timer);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(svgDataUrl);
+          return;
+        }
+
+        // Dark executive desk slate background
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, width, height);
+
+        // Draw the SVG onto the canvas
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Export as authentic JPEG with high fidelity
+        const jpegUrl = canvas.toDataURL('image/jpeg', 0.94);
+        resolve(jpegUrl);
+      } catch (err) {
+        console.warn('Canvas rasterization fallback to SVG:', err);
+        resolve(svgDataUrl);
+      }
+    };
+
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(svgDataUrl);
+    };
+
+    img.src = svgDataUrl;
+  });
+}
+
+/**
+ * Generates an authentic rasterized JPEG desk photo containing up to 10 distinct business cards.
+ */
+export async function renderMultiCardDeskToJpeg(cardCount: number = 4): Promise<string> {
+  const svg = generateMultiCardPhotoDesk(cardCount);
+  const width = cardCount > 6 ? 1600 : 1200;
+  const height = cardCount > 6 ? 1200 : 900;
+  return svgToJpegDataUrl(svg, width, height);
 }
 
 /**
