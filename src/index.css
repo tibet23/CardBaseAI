@@ -1,13 +1,21 @@
 @import "tailwindcss";
 
-/* Mobile Optimizations (Safe Areas, Tap Highlighting & Momentum Scrolling) */
+/* Native Android Material Design Font Stack & Variables */
 :root {
   -webkit-tap-highlight-color: transparent;
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 html, body {
   overscroll-behavior-y: contain;
   -webkit-font-smoothing: antialiased;
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Android Touch Target Standard (48x48dp minimum for interactive accessibility) */
+.android-touch-target {
+  min-width: 48px;
+  min-height: 48px;
 }
 
 button, a, input, select, textarea {
@@ -23,12 +31,12 @@ button, a, input, select, textarea {
   scrollbar-width: none;
 }
 
-/* Safe area padding utilities for iPhone notch / home indicator */
+/* Android navigation bar spacing */
 .pb-safe {
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
 }
 .pb-safe-nav {
-  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0.5rem));
+  padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0.5rem));
 }
 .pt-safe {
   padding-top: max(0.5rem, env(safe-area-inset-top, 0.5rem));

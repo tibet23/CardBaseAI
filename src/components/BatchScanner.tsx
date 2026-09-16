@@ -24,6 +24,7 @@ import { generateMultiCardPhotoDesk, generateSampleCardSvg, renderMultiCardDeskT
 import { performOfflineOCR } from '../utils/offlineOcr';
 import { getCsrfHeaders } from '../utils/apiAuth';
 import { CompanyBrandFrame } from './CompanyBrandFrame';
+import { BrandLogo } from './BrandLogo';
 
 interface BatchScannerProps {
   isOpen: boolean;
@@ -467,9 +468,7 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
         {/* Modal Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/80 dark:bg-[#0b1120]/80">
           <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 pr-2">
-            <div className="p-2 sm:p-2.5 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 shrink-0">
-              <Layers className="h-4 w-4 sm:h-5 sm:w-5" />
-            </div>
+            <BrandLogo size="md" />
             <div className="min-w-0">
               <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
                 <h2 className="text-sm sm:text-base md:text-lg font-bold text-slate-900 dark:text-white truncate">
@@ -591,26 +590,57 @@ export const BatchScanner: React.FC<BatchScannerProps> = ({
                           className="w-full h-full object-cover"
                         />
 
-                        {/* Multi-Card Alignment Overlay Grid: 10 Cards (2 Columns x 5 Rows) */}
+                        {/* Native Android Batch Capture Viewfinder Reticle (Overhead Scanning HUD) */}
                         <div className="absolute inset-0 pointer-events-none p-3 sm:p-4 flex flex-col justify-between">
-                          <div className="flex justify-between items-center text-white/90 text-[10px] sm:text-[11px] font-mono bg-black/70 px-2.5 py-1 rounded-lg backdrop-blur-md self-start border border-white/10 shadow-sm">
-                            <span>OVERHEAD 10-CARD GRID (2 × 5)</span>
+                          
+                          {/* Top Status & Orientation Pill */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center space-x-1.5 text-white text-[11px] font-mono font-bold bg-slate-950/85 px-3 py-1.5 rounded-full border border-blue-500/40 shadow-lg backdrop-blur-md">
+                              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                              <span>OVERHEAD 10-CARD RETICLE</span>
+                            </div>
+                            <div className="text-[10px] font-mono text-blue-300/90 bg-slate-950/80 px-2.5 py-1 rounded-md border border-slate-700">
+                              FOV: MULTI-TARGET (2×5)
+                            </div>
                           </div>
 
-                          {/* Guide Grid Lines (2 columns, 5 rows) */}
-                          <div className="grid grid-cols-2 grid-rows-5 gap-1.5 sm:gap-2 flex-1 my-2 border-2 border-dashed border-white/35 rounded-xl p-1.5 sm:p-2 bg-black/15 backdrop-blur-[0.5px]">
-                            {Array.from({ length: 10 }).map((_, idx) => (
-                              <div
-                                key={idx}
-                                className="border border-white/25 rounded-lg flex items-center justify-center text-white/80 text-[9px] sm:text-[11px] font-mono font-bold bg-white/10 backdrop-blur-xs shadow-2xs"
-                              >
-                                Card Slot #{idx + 1}
-                              </div>
-                            ))}
+                          {/* Subtle Geometric Reticle & Corner Bounding Guides */}
+                          <div className="relative flex-1 my-2 mx-1 border border-blue-500/30 rounded-2xl bg-black/20 backdrop-blur-[0.5px] p-2 flex flex-col justify-between overflow-hidden">
+                            {/* Reticle Corner Brackets (Material HUD styling) */}
+                            <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-blue-400 rounded-tl-xl" />
+                            <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-blue-400 rounded-tr-xl" />
+                            <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-blue-400 rounded-bl-xl" />
+                            <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-blue-400 rounded-br-xl" />
+
+                            {/* Center Crosshair / Level Horizon */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                              <div className="w-10 h-0.5 bg-blue-400/40" />
+                              <div className="w-0.5 h-10 bg-blue-400/40 absolute" />
+                              <div className="w-16 h-16 rounded-full border border-dashed border-blue-400/30 absolute" />
+                            </div>
+
+                            {/* 10 Scattered Card Target Slots (2 Columns x 5 Rows) with High-Contrast Corner Crosses */}
+                            <div className="grid grid-cols-2 grid-rows-5 gap-2 h-full z-10">
+                              {Array.from({ length: 10 }).map((_, idx) => (
+                                <div
+                                  key={idx}
+                                  className="relative border border-dashed border-white/30 rounded-xl flex flex-col items-center justify-center text-white/90 text-[10px] sm:text-xs font-mono font-medium bg-slate-950/30 backdrop-blur-xs p-1"
+                                >
+                                  {/* Inner corner dots */}
+                                  <span className="text-[9px] sm:text-[10px] text-blue-300 font-bold">
+                                    CARD SLOT #{idx + 1}
+                                  </span>
+                                  <span className="text-[8px] text-slate-300/80">
+                                    scattered or aligned
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
                           </div>
 
-                          <div className="text-center text-white/90 text-[10px] sm:text-[11px] font-medium bg-black/70 py-1 px-2.5 rounded-lg backdrop-blur-md border border-white/10 shadow-sm">
-                            Align up to 10 cards in 2 columns on a flat surface and snap
+                          {/* Bottom Android Guidance Banner */}
+                          <div className="text-center text-white text-[11px] font-medium bg-slate-950/85 py-1.5 px-3 rounded-full border border-slate-700 backdrop-blur-md shadow-md mx-auto">
+                            Hold camera overhead flat over desk • Fits up to 10 scattered cards in 1 snap
                           </div>
                         </div>
                       </>

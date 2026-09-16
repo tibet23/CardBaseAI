@@ -1,17 +1,7 @@
-export interface CapacitorConfig {
-  appId: string;
-  appName: string;
-  webDir: string;
-  server?: {
-    androidScheme?: string;
-    cleartext?: boolean;
-    url?: string;
-  };
-  plugins?: Record<string, any>;
-}
+import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.cardbase.ai',
+  appId: 'com.cardbaseai.app',
   appName: 'CardBase AI',
   webDir: 'dist',
   server: {

@@ -22,6 +22,7 @@ import { performOfflineOCR } from '../utils/offlineOcr';
 import { getCsrfHeaders } from '../utils/apiAuth';
 import { generateSampleCardSvg } from '../utils/sampleCards';
 import { CompanyBrandFrame } from './CompanyBrandFrame';
+import { BrandLogo } from './BrandLogo';
 
 interface CameraScannerProps {
   isOpen: boolean;
@@ -426,9 +427,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 dark:border-slate-800/80 bg-slate-50/80 dark:bg-[#0b1120]/80">
           <div className="flex items-center space-x-2.5 sm:space-x-3 min-w-0 pr-2">
-            <div className="p-2 sm:p-2.5 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 shrink-0">
-              <Camera className="h-4 w-4 sm:h-5 sm:w-5" />
-            </div>
+            <BrandLogo size="md" />
             <div className="min-w-0">
               <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center flex-wrap gap-1.5 sm:gap-2">
                 <span>Live Camera Card Scanner</span>

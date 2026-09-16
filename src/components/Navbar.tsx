@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { ContactCard, UserBillingState } from '../types';
 import { exportToCSV, exportToVCF, printContactSheet } from '../utils/exportUtils';
+import { BrandLogo } from './BrandLogo';
 
 interface NavbarProps {
   cards?: ContactCard[];
@@ -63,13 +64,11 @@ export const Navbar: React.FC<NavbarProps> = ({
           
           {/* Brand Logo & Name */}
           <div className="flex items-center space-x-2.5 sm:space-x-3 shrink-0">
-            <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs">
-              <Layers className="h-4 w-4 sm:h-5 sm:w-5" />
-            </div>
+            <BrandLogo size="md" />
             <div>
               <div className="flex items-center space-x-1.5 sm:space-x-2">
                 <span className="font-bold text-sm sm:text-base tracking-tight text-slate-900 dark:text-white">
-                  CardBase
+                  CardBase AI
                 </span>
                 <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                   10-in-1 OCR
@@ -219,7 +218,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-mobile-batch-scan"
               onClick={onOpenBatchScanner}
-              className="min-h-[46px] rounded-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex flex-col items-center justify-center p-1 active:scale-95 transition-all shadow-xs cursor-pointer"
+              className="min-h-[48px] rounded-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex flex-col items-center justify-center p-1 active:scale-95 transition-all shadow-xs cursor-pointer"
               title="Scan up to 10 cards from 1 photo"
             >
               <Layers className="h-4 w-4 shrink-0" />
@@ -232,7 +231,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-mobile-single-scan"
               onClick={handleSingleCamera}
-              className="min-h-[46px] rounded-xl font-semibold bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
+              className="min-h-[48px] rounded-xl font-semibold bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
               title="Scan single card camera"
             >
               <Camera className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
@@ -245,7 +244,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-mobile-manual-add"
               onClick={onAddNewManualCard}
-              className="min-h-[46px] rounded-xl font-semibold bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
+              className="min-h-[48px] rounded-xl font-semibold bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
               title="Add contact manually"
             >
               <Plus className="h-4 w-4 text-slate-600 dark:text-slate-300 shrink-0" />
@@ -258,7 +257,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-mobile-crm-sync"
               onClick={onOpenCrmSync}
-              className="min-h-[46px] rounded-xl font-semibold bg-violet-50 dark:bg-violet-950/50 hover:bg-violet-100 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
+              className="min-h-[48px] rounded-xl font-semibold bg-violet-50 dark:bg-violet-950/50 hover:bg-violet-100 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 border border-violet-200 dark:border-violet-800 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
               title="Synchronize contacts with CRM"
             >
               <Share2 className="h-4 w-4 text-violet-600 dark:text-violet-400 shrink-0" />
@@ -271,7 +270,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="btn-mobile-export"
               onClick={() => setShowExportMenu(!showExportMenu)}
-              className="min-h-[46px] rounded-xl font-semibold bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
+              className="min-h-[48px] rounded-xl font-semibold bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex flex-col items-center justify-center p-1 active:scale-95 transition-all cursor-pointer"
               title="Export contacts"
             >
               <Download className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />

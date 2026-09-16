@@ -26,6 +26,7 @@ import {
 import { UserBillingState, SubscriptionPlanType, CreditPackType } from '../types';
 import { upgradeToSubscription, purchaseCreditPack, resetBillingToFree } from '../utils/storage';
 import { executePlayPurchase, PLAY_STORE_SKUS, isGooglePlayEnvironment } from '../utils/googlePlayBilling';
+import { BrandLogo } from './BrandLogo';
 
 interface PricingModalProps {
   isOpen: boolean;
@@ -120,9 +121,7 @@ export const PricingModal: React.FC<PricingModalProps> = ({
         {/* Modal Top Header */}
         <div className="relative px-6 py-5 border-b border-slate-100 dark:border-slate-800/80 bg-gradient-to-r from-blue-900/10 via-indigo-900/10 to-transparent flex items-center justify-between sticky top-0 bg-white/95 dark:bg-[#090d16]/95 backdrop-blur-sm z-10">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 rounded-2xl bg-gradient-to-tr from-amber-500 to-indigo-600 text-white shadow-md shadow-indigo-500/20">
-              <Crown className="h-5 w-5" />
-            </div>
+            <BrandLogo size="lg" />
             <div>
               <div className="flex items-center space-x-2">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">CardBase AI Pricing</h2>

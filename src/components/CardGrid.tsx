@@ -22,6 +22,7 @@ import {
 import { ContactCard, CRMProvider, CategoryConfig } from '../types';
 import { CardItem } from './CardItem';
 import { exportToVCF, exportToCSV } from '../utils/exportUtils';
+import { ExtractionEngineStatus } from './ExtractionEngineStatus';
 
 interface CardGridProps {
   cards: ContactCard[];
@@ -36,6 +37,7 @@ interface CardGridProps {
   onOpenBatchScanner: () => void;
   onOpenCameraScanner: () => void;
   privacyMode: boolean;
+  isOffline?: boolean;
 }
 
 export const CardGrid: React.FC<CardGridProps> = ({
@@ -51,6 +53,7 @@ export const CardGrid: React.FC<CardGridProps> = ({
   onOpenBatchScanner,
   onOpenCameraScanner,
   privacyMode,
+  isOffline = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -162,8 +165,19 @@ export const CardGrid: React.FC<CardGridProps> = ({
   const selectedCards = cards.filter((c) => selectedIds.includes(c.id));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       
+      {/* Android Dual-Engine OCR Status & Quick Action Row */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+        <ExtractionEngineStatus isOffline={isOffline} />
+        
+        <div className="flex items-center space-x-2 self-end sm:self-auto text-xs text-slate-500 dark:text-slate-400">
+          <span className="font-medium">
+            {cards.length} {cards.length === 1 ? 'Contact' : 'Contacts'} Synced
+          </span>
+        </div>
+      </div>
+
       {/* Top Search & Filter Bar */}
       <div className="bg-white dark:bg-[#090d16] p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-200 dark:border-slate-800/80 shadow-sm space-y-3.5 sm:space-y-4">
         

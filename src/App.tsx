@@ -25,6 +25,7 @@ import { QrCodeModal } from './components/QrCodeModal';
 import { CategoryManagerModal } from './components/CategoryManagerModal';
 import { CrmSyncModal } from './components/CrmSyncModal';
 import { PricingModal } from './components/PricingModal';
+import { AndroidBottomNav, AndroidTab } from './components/AndroidBottomNav';
 
 export const App: React.FC = () => {
   // App State
@@ -33,6 +34,7 @@ export const App: React.FC = () => {
   const [crmConfigs, setCrmConfigs] = useState<CRMConfig[]>(() => loadCrmConfigs());
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [billing, setBilling] = useState<UserBillingState>(() => loadBilling());
+  const [androidTab, setAndroidTab] = useState<AndroidTab>('leads');
 
   // Modals
   const [isBatchScannerOpen, setIsBatchScannerOpen] = useState(false);
@@ -214,7 +216,7 @@ export const App: React.FC = () => {
       />
 
       {/* Main Workspace */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-safe-nav md:pb-6">
         <CardGrid
           cards={cards}
           categoriesList={categories}
@@ -228,8 +230,25 @@ export const App: React.FC = () => {
           onOpenBatchScanner={() => setIsBatchScannerOpen(true)}
           onOpenCameraScanner={() => setIsCameraScannerOpen(true)}
           privacyMode={settings.privacyMode}
+          isOffline={isSystemOffline}
         />
       </main>
+
+      {/* Native Android Material Bottom Navigation Bar (Mobile) */}
+      <AndroidBottomNav
+        activeTab={androidTab}
+        leadCount={cards.length}
+        onTabChange={(tab) => {
+          setAndroidTab(tab);
+          if (tab === 'scanner') {
+            setIsBatchScannerOpen(true);
+          } else if (tab === 'integrations') {
+            setIsCrmSyncOpen(true);
+          }
+        }}
+        onOpenPricing={() => setIsPricingOpen(true)}
+        isPro={billing.isSubscribed || billing.plan === 'pro'}
+      />
 
       {/* 10-in-1 Multi-Card Batch Scanner Modal */}
       <BatchScanner

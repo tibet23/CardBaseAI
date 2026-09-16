@@ -172,7 +172,7 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
         <div className="flex px-6 border-b border-slate-200 dark:border-slate-800 space-x-8 text-xs font-semibold">
           <button
             onClick={() => setActiveTab('integrations')}
-            className={`py-3 border-b-2 transition-colors cursor-pointer ${
+            className={`min-h-[48px] py-3 border-b-2 transition-colors cursor-pointer flex items-center ${
               activeTab === 'integrations'
                 ? 'border-violet-600 text-violet-600 dark:border-violet-400 dark:text-violet-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700'
@@ -182,7 +182,7 @@ export const CrmSyncModal: React.FC<CrmSyncModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('mapping')}
-            className={`py-3 border-b-2 transition-colors cursor-pointer ${
+            className={`min-h-[48px] py-3 border-b-2 transition-colors cursor-pointer flex items-center ${
               activeTab === 'mapping'
                 ? 'border-violet-600 text-violet-600 dark:border-violet-400 dark:text-violet-400'
                 : 'border-transparent text-slate-500 hover:text-slate-700'

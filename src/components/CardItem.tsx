@@ -211,8 +211,9 @@ export const CardItem: React.FC<CardItemProps> = ({
                 e.stopPropagation();
                 onToggleFavorite(card);
               }}
-              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white transition-colors cursor-pointer"
+              className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 backdrop-blur-sm text-white transition-colors cursor-pointer"
               title="Toggle Favorite"
+              aria-label="Toggle Favorite"
             >
               <Star
                 className={`h-4 w-4 ${
@@ -295,8 +296,9 @@ export const CardItem: React.FC<CardItemProps> = ({
               e.stopPropagation();
               onOpenQr(card);
             }}
-            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="min-h-[48px] min-w-[48px] flex items-center justify-center rounded-xl text-slate-400 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             title="Show vCard QR Code"
+            aria-label="Show vCard QR Code"
           >
             <QrCode className="h-4 w-4 text-purple-600 dark:text-purple-400" />
           </button>
